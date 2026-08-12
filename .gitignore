@@ -1,0 +1,72 @@
+# Local .terraform directories
+**/.terraform/
+
+# Terraform state files
+*.tfstate
+*.tfstate.*
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Terraform variable files (may contain secrets — IDs, tokens, key paths)
+*.tfvars
+!terraform.tfvars.example
+
+# Terraform plan files
+*.plan
+*.tfplan
+
+# CLI configuration
+.terraformrc
+terraform.rc
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Secrets and keys
+vault/
+
+# Environment and credentials
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+._*
+
+# Editor / IDE
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+
+# Backup files
+*.backup
+*.bak
+*.orig
+
+# SSH keys
+id_*
+!id_*.pub.example
+
+# Ansible
+*.retry
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+kubeconfig.*
+
+# Helm
+Chart.lock
