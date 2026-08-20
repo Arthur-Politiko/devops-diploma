@@ -11,6 +11,11 @@ SA_KEY=../vault/diploma-sa-key.json
 SA_ID=""
 SSH_KEY_DIR=../vault
 SSH_KEY_NAME=id_ed25519
+OSLOGIN_LOGIN=ubuntu
+OSLOGIN_UID=2000
+OSLOGIN_HOME=/home/ubuntu
+OSLOGIN_SHELL=/bin/bash
+SSH_KEY_EXPIRES_AT="2027-01-01T00:00:00Z"
 
 SUCCESS=0
 GENERAL_ERROR=1
@@ -126,7 +131,24 @@ function add_ssh_to_cloud() {
     --subject-id "$SA_ID" \
     --name "$key_name" \
     --data "$(cat "${key_path}.pub")" \
-    --expires-at 2025-12-31T00:00:00Z
+    --expires-at "$SSH_KEY_EXPIRES_AT"
+}
+
+function create_oslogin_profile() {
+  local subject_id=$1
+  local login=$2
+  local uid=$3
+  local home_dir=$4
+  local shell=$5
+  if ! yc organization-manager oslogin profile create \
+    --organization-id "$ORG_ID" \
+    --subject-id "$subject_id" \
+    --login "$login" \
+    --uid "$uid" \
+    --home-directory "$home_dir" \
+    --shell "$shell"; then
+    echo "OS Login profile '$login' may already exist, continuing"
+  fi
 }
 
 function generate_service_account_key() {
@@ -189,6 +211,13 @@ if ! add_ssh_to_cloud "${SSH_KEY_DIR}/${SSH_KEY_NAME}" "$SSH_KEY_NAME"; then
   exit 1
 else
   echo "SSH key registered at org level for SA $SA_NAME"
+fi
+
+if ! create_oslogin_profile "$SA_ID" "$OSLOGIN_LOGIN" "$OSLOGIN_UID" "$OSLOGIN_HOME" "$OSLOGIN_SHELL"; then
+  echo "Failed to create OS Login profile"
+  exit 1
+else
+  echo "OS Login profile '$OSLOGIN_LOGIN' ready for SA $SA_NAME"
 fi
 
 if ! generate_service_account_key "$SA_ID"; then

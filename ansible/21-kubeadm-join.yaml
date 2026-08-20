@@ -1,0 +1,60 @@
+---
+- name: "21 Join worker nodes to Kubernetes cluster"
+  hosts: workers
+  become: true
+  gather_facts: true
+
+  vars:
+    cri_socket: "unix:///var/run/containerd/containerd.sock"
+    master_host: "{{ groups['master'][0] }}"
+
+  pre_tasks:
+    - name: Check if node already joined
+      command: kubectl get node {{ inventory_hostname }} --no-headers --ignore-not-found
+      register: node_check
+      changed_when: false
+      delegate_to: "{{ master_host }}"
+      failed_when: false
+
+    - name: Exit if already joined
+      meta: end_play
+      when: node_check.stdout != ''
+
+  tasks:
+    - name: Fetch join command from master
+      command: cat /tmp/kubeadm_join_command.txt
+      register: join_command_raw
+      changed_when: false
+      delegate_to: "{{ master_host }}"
+      run_once: true
+
+    - name: Parse join parameters
+      set_fact:
+        kubeadm_join_api_server: "{{ join_command_raw.stdout | regex_search('kubeadm join (\\S+):6443', '\\1') | first }}"
+        kubeadm_join_token: "{{ join_command_raw.stdout | regex_search('--token (\\S+)', '\\1') | first }}"
+        kubeadm_join_ca_hash: "{{ join_command_raw.stdout | regex_search('--discovery-token-ca-cert-hash sha256:(\\S+)', '\\1') | first }}"
+
+    - name: Verify join parameters
+      assert:
+        that:
+          - kubeadm_join_token is defined and kubeadm_join_token != ''
+          - kubeadm_join_ca_hash is defined and kubeadm_join_ca_hash != ''
+          - kubeadm_join_api_server is defined and kubeadm_join_api_server != ''
+
+    - name: Join worker to cluster
+      command: >
+        kubeadm join {{ kubeadm_join_api_server }}:6443
+        --token {{ kubeadm_join_token }}
+        --discovery-token-ca-cert-hash sha256:{{ kubeadm_join_ca_hash }}
+        --cri-socket {{ cri_socket }}
+        --ignore-preflight-errors=All
+
+    - name: Restart kubelet
+      systemd:
+        name: kubelet
+        state: restarted
+
+  post_tasks:
+    - name: Show join status
+      debug:
+        msg: "✅ Worker node {{ inventory_hostname }} joined the cluster!"

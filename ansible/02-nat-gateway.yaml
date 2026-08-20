@@ -1,0 +1,52 @@
+---
+# Плейбук настройки NAT на мастер-ноде
+# Обеспечивает доступ worker-нод в интернет через мастер (masquerade)
+- name: "02 Configure NAT gateway on master node"
+  hosts: master
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Ensure iptables is installed
+      ansible.builtin.apt:
+        name: iptables
+        state: present
+
+    - name: Ensure iptables-persistent is installed (for saving rules)
+      ansible.builtin.apt:
+        name: iptables-persistent
+        state: present
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+  tasks:
+    - name: Enable IP forwarding immediately
+      ansible.builtin.sysctl:
+        name: net.ipv4.ip_forward
+        value: "1"
+        state: present
+        reload: yes
+
+    - name: Ensure IP forwarding is permanent
+      ansible.builtin.lineinfile:
+        path: /etc/sysctl.conf
+        regexp: '^net.ipv4.ip_forward'
+        line: 'net.ipv4.ip_forward = 1'
+        state: present
+
+    - name: Check if NAT masquerade rule already exists
+      ansible.builtin.command: iptables -t nat -C POSTROUTING -o {{ ansible_default_ipv4.interface }} -j MASQUERADE
+      register: nat_rule_exists
+      changed_when: false
+      failed_when: false
+
+    - name: Add NAT masquerade rule
+      ansible.builtin.command:
+        cmd: iptables -t nat -A POSTROUTING -o {{ ansible_default_ipv4.interface }} -j MASQUERADE
+      when: nat_rule_exists.rc != 0
+      notify: Save iptables rules
+
+  handlers:
+    - name: Save iptables rules
+      ansible.builtin.command: netfilter-persistent save
+      changed_when: true

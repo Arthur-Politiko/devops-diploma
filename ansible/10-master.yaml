@@ -1,0 +1,43 @@
+---
+# Настройка master-нод Kubernetes
+- name: "10 Configure Kubernetes master nodes"
+  hosts: master
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    # Копирование SSH-ключа на мастер-ноду для доступа к worker-нодам (ProxyJump)
+    - name: Ensure .ssh directory exists for ubuntu user
+      ansible.builtin.file:
+        path: /home/ubuntu/.ssh
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0700'
+
+    - name: Copy SSH private key to master node (for worker access via ProxyJump)
+      ansible.builtin.copy:
+        src: "{{ ansible_ssh_private_key_file }}"
+        dest: /home/ubuntu/.ssh/id_ed25519
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+
+    # Создание группы k8s для пользователя ubuntu
+    - name: Add ubuntu user to k8s group
+      user:
+        name: ubuntu
+        groups: k8s
+        append: yes
+      failed_when: false
+
+  tasks:
+    # Создание директории для kubeconfig
+    - name: Create .kube directory for ubuntu user
+      file:
+        path: /home/ubuntu/.kube
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+

@@ -1,0 +1,13 @@
+---
+- name: "01 Bootstrap Kubernetes nodes"
+  hosts: master:workers
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Install Python dependencies
+      ansible.builtin.apt:
+        name:
+          - python3
+          - python3-pip
+        state: present

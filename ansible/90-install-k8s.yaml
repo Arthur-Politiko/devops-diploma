@@ -1,0 +1,23 @@
+---
+# Головной playbook для установки Kubernetes кластера
+# Порядок выполнения:
+# 1. bootstrap.yml - установка Python
+# 2. master.yaml - установка Kubernetes на master
+# 3. worker.yaml - установка Kubernetes на workers
+# 4. kubeadm-init.yaml - инициализация кластера на master
+# 5. kubeadm-join.yaml - присоединение workers к кластеру
+
+- name: "01 Bootstrap Kubernetes nodes"
+  import_playbook: 01-bootstrap.yaml
+
+- name: "05 Prepare Kubernetes nodes"
+  import_playbook: 05-k8s-common.yaml
+
+- name: "10 Configure Kubernetes master nodes"
+  import_playbook: 10-master.yaml
+
+- name: "20 Initialize Kubernetes cluster"
+  import_playbook: 20-kubeadm-init.yaml
+
+- name: "21 Join worker nodes to cluster"
+  import_playbook: 21-kubeadm-join.yaml
