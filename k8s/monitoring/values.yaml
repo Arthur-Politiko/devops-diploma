@@ -1,0 +1,84 @@
+# Значения для helm-чарта kube-prometheus-stack (prometheus-community).
+# Стенд: self-hosted Kubernetes 1.35 (kubeadm + Flannel), 3 control-plane + 3 worker,
+# все VM прерываемые, StorageClass и CSI в кластере нет.
+#
+# Установка:
+#   helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+#     --namespace monitoring --version 91.6.0 -f values.yaml
+
+prometheus:
+  prometheusSpec:
+    # В чарте по умолчанию уже 1 реплика (в манифестах kube-prometheus было бы 2).
+    # Фиксируем явно: вторая реплика на учебном стенде не нужна.
+    replicas: 1
+    # Метрики всё равно живут только до переезда пода: хранилище эфемерное,
+    # а ноды прерываемые. Держим короткое окно вместо дефолтных 10d.
+    retention: 6h
+    # Пусто = emptyDir. PVC не создаётся, StorageClass не требуется.
+    storageSpec: {}
+    resources:
+      requests:
+        cpu: 100m
+        memory: 400Mi
+      limits:
+        memory: 1Gi
+    # Подхватывать ServiceMonitor / PodMonitor / PrometheusRule из любых namespace,
+    # а не только помеченные релизом чарта. Понадобится, когда будем добавлять
+    # мониторинг своего приложения.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    # Раскомментировать, чтобы прибить Prometheus к конкретной ноде:
+    # nodeSelector:
+    #   kubernetes.io/hostname: k8s-worker-01
+
+alertmanager:
+  alertmanagerSpec:
+    # В чарте по умолчанию 1 (в манифестах kube-prometheus — 3).
+    replicas: 1
+    resources:
+      requests:
+        cpu: 10m
+        memory: 100Mi
+
+grafana:
+  admin:
+    # Пароль не хранится в git: чарт берёт его из Secret, созданного заранее вручную.
+    # Ключи в Secret: admin-user и admin-password.
+    existingSecret: grafana-admin-credentials
+  persistence:
+    # Явно оставляем эфемерное хранилище (это же и дефолт чарта):
+    # дашборды приезжают из чарта, а сохранённые вручную всё равно потеряются
+    # при переезде пода.
+    enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 200Mi
+  # Доступ снаружи — отдельным шагом через ingress (по заданию порт 80).
+  # Раскомментировать, когда в кластере появится ingress-контроллер:
+  # ingress:
+  #   enabled: true
+  #   ingressClassName: nginx
+  #   hosts:
+  #     - grafana.<IP>.nip.io
+
+# Компоненты control plane в kubeadm слушают 127.0.0.1 (kube-scheduler, kube-controller-manager,
+# etcd, kube-proxy), поэтому Prometheus до них не дотянется и таргеты будут вечно DOWN.
+# Отключаем их, чтобы в Status -> Targets не было красного.
+# Включить обратно можно, перенастроив control plane на прослушивание 0.0.0.0 —
+# но это правка static pod'ов на master-нодах, для диплома не обязательно.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+# Что остаётся работать из коробки:
+#   kubeApiServer, kubelet (через API-сервер), CoreDNS, kube-state-metrics,
+#   prometheus-node-exporter — DaemonSet с tolerations на все taints,
+#   поэтому появится на всех 6 нодах, включая master-ноды.

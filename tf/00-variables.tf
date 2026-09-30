@@ -153,10 +153,10 @@ variable "vm_platform_id" {
 
 #**********************************************#
 variable "default_image" {
-  description = "ID of the default image"
+  description = "ID образа ОС (не семейство: семейство приводит к пересозданию машин при обновлении образа)"
   type        = string
   # default     = "ubuntu-2404-lts-oslogin"
-  default     = "ubuntu-2404-lts"
+  default     = "fd8ee8il5b8tk8oggcs0" # ubuntu-2404-lts на 2026-09-28
 }
 # "https://cloud.yandex.ru/docs/compute/concepts/images"
 variable "vm_image_family" {
@@ -314,8 +314,8 @@ variable "vm_res_type" {
       # disk_volume  = 20
     },
     "admin" = {
-      cpu           = 2
-      ram           = 4
+      cpu           = 4
+      ram           = 8
       core_fraction = 20
       # disk_volume  = 20
     },
@@ -412,9 +412,9 @@ variable "vms" {
     { vm_name = "k8s-master-01", vm_subnet = "private-a", vm_role = "master" },
     { vm_name = "k8s-master-02", vm_subnet = "private-b", vm_role = "master" },
     { vm_name = "k8s-master-03", vm_subnet = "private-a", vm_role = "master" },
-    { vm_name = "k8s-worker-01", vm_subnet = "private-a", vm_role = "worker" }
-    # { vm_name = "k8s-worker-02", vm_subnet = "private-b", vm_role = "worker" },
-    # { vm_name = "k8s-worker-03", vm_subnet = "private-d", vm_role = "worker" }
+    { vm_name = "k8s-worker-01", vm_subnet = "private-a", vm_role = "worker" },
+    { vm_name = "k8s-worker-02", vm_subnet = "private-b", vm_role = "worker" },
+    { vm_name = "k8s-worker-03", vm_subnet = "private-a", vm_role = "worker" }
   ]
   description = "List of VMs"
 }
@@ -734,4 +734,13 @@ variable "k8s_admin_sa" {
   })
   default = {}
 }
+
 #**********************************************#
+variable "docker" {
+  description = "docker registry config variable"
+  type = object({
+    registry_name = optional(string, "main")
+    repo_name = optional(string, "hub")
+  })
+  default = {}
+}

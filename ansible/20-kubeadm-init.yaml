@@ -1,43 +1,45 @@
 ---
 # Плейбук инициализации Kubernetes кластера на мастер-ноде
-- name: "20 Initialize Kubernetes cluster on master node"
-  hosts: master
+- name: "[20] Initialize Kubernetes cluster on master node"
+  hosts: masters
   become: true
   gather_facts: true
 
   vars:
-    kubernetes_version: "1.35"
+    kubernetes_version: "1.35.0"
     pod_network_cidr: "10.244.0.0/16"
     service_cidr: "10.96.0.0/12"
     api_server_advertise_address: "{{ ansible_default_ipv4.address }}"
     cri_socket: "unix:///var/run/containerd/containerd.sock"
-    kubeconfig_path: "/home/ubuntu/.kube/config"
     admin_kubeconfig_path: "/etc/kubernetes/admin.conf"
-    ubuntu_user: "ubuntu"
 
   pre_tasks:
-    # Простая проверка: admin.conf существует = кластер уже инициализирован
-    - name: Check if cluster is already initialized
+    # admin.conf существует = кластер уже инициализирован.
+    # end_play здесь не нужен: 20-3 и так пропускается по cluster_initialized,
+    # а end_play оборвал бы play для всех мастеров сразу.
+    - name: 20-1 Check if cluster is already initialized
       ansible.builtin.stat:
         path: "{{ admin_kubeconfig_path }}"
       register: admin_conf_stat
+      when: inventory_hostname == master_name
 
-    - name: Set cluster_initialized fact
+    - name: 20-2 Set cluster_initialized fact
       ansible.builtin.set_fact:
-        cluster_initialized: "{{ admin_conf_stat.stat.exists }}"
-
-    - name: Exit if cluster already initialized
-      ansible.builtin.debug:
-        msg: "Kubernetes cluster is already initialized. Skipping initialization."
-      when: cluster_initialized
-      notify: Stop playbook
+        cluster_initialized: "{{ admin_conf_stat.stat.exists | default(false) }}"
 
   tasks:
-
-    - name: Initialize Kubernetes cluster
+    # Инициализация кластера Kubernetes только на одном мастере.
+    # admin.conf остаётся только здесь: это рабочий конфиг самого kubeadm.
+    # Копий в ~/.kube на мастере нет — все обращения к кластеру идут
+    # с admin-ноды (kubectl и kubeconfig ставит 23-admin-kube-config.yaml).
+    #
+    # Join-токен здесь не создаётся: его генерирует 21-kubeadm-join.yaml
+    # перед каждым join'ом, потому что токен живёт 24 часа.
+    - name: 20-3 Initialize Kubernetes cluster
       ansible.builtin.command: >
         kubeadm init
-        --kubernetes-version={{ kubernetes_version }}.0
+        --control-plane-endpoint {{ master_name }}:6443
+        --kubernetes-version={{ kubernetes_version }}
         --pod-network-cidr={{ pod_network_cidr }}
         --service-cidr={{ service_cidr }}
         --apiserver-advertise-address={{ api_server_advertise_address }}
@@ -45,105 +47,18 @@
 
       register: kubeadm_init
       changed_when: true
-      when: not cluster_initialized
-
-    # Создание директории для kubeconfig
-    - name: Create .kube directory for ubuntu user
-      ansible.builtin.file:
-        path: "{{ kubeconfig_path | dirname }}"
-        state: directory
-        owner: "{{ ubuntu_user }}"
-        group: "{{ ubuntu_user }}"
-        mode: '0755'
-
-    # Копирование admin.conf в домашнюю директорию ubuntu
-    - name: Copy admin.conf to ubuntu user home
-      ansible.builtin.copy:
-        src: "{{ admin_kubeconfig_path }}"
-        dest: "{{ kubeconfig_path }}"
-        remote_src: yes
-        owner: "{{ ubuntu_user }}"
-        group: "{{ ubuntu_user }}"
-        mode: '0600'
-
-    # Создание директории .kube для root
-    - name: Create .kube directory for root user
-      ansible.builtin.file:
-        path: /root/.kube
-        state: directory
-        mode: '0755'
-
-    # Копирование admin.conf для root (нужно для kubeadm команд)
-    - name: Setup kubeconfig for root user
-      ansible.builtin.copy:
-        src: "{{ admin_kubeconfig_path }}"
-        dest: /root/.kube/config
-        remote_src: yes
-        mode: '0600'
-
-
-
-    # Установка переменных окружения для kubectl
-    - name: Create kubectl environment file
-      ansible.builtin.copy:
-        content: |
-          export KUBECONFIG={{ kubeconfig_path }}
-        dest: /etc/profile.d/kubectl.sh
-        mode: '0644'
-
-    # Применение CNI-плагина (Flannel)
-    - name: Apply Flannel CNI plugin
-      ansible.builtin.command: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
-      register: flannel_apply
-      changed_when: "'created' in flannel_apply.stdout or 'configured' in flannel_apply.stdout"
-      failed_when: flannel_apply.rc != 0
-      become: false
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
-
-    # Проверка статуса узлов
-    - name: Wait for master node to be ready
-      ansible.builtin.command: kubectl get nodes -o wide
-      register: kubectl_get_nodes
-      changed_when: false
-      until: "'Ready' in kubectl_get_nodes.stdout"
-      retries: 30
-      delay: 10
-      become: false
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
-
-    # Создание токена для присоединения worker-нод
-    - name: Create join token
-      ansible.builtin.command: kubeadm token create --print-join-command
-      register: kubeadm_join_command
-      changed_when: false
-
-    - name: Save kubeadm join command
-      ansible.builtin.copy:
-        content: "{{ kubeadm_join_command.stdout }}"
-        dest: /tmp/kubeadm_join_command.txt
-        mode: '0644'
-  
-
-
-
-  handlers:
-    - name: Stop playbook
-      meta: end_play
+      when: not cluster_initialized and inventory_hostname == master_name
 
   post_tasks:
     - name: Display cluster info
       ansible.builtin.debug:
         msg: |
+          {% if kubeadm_init is defined and kubeadm_init.changed %}
           Kubernetes cluster initialized successfully!
-          
+          {% else %}
+          Cluster already initialized, nothing to do.
+          {% endif %}
+
           Master node IP: {{ api_server_advertise_address }}
           Pod CIDR: {{ pod_network_cidr }}
           Service CIDR: {{ service_cidr }}
-          
-          To join worker nodes, use:
-          {{ kubeadm_join_command.stdout | default('Run kubeadm token create --print-join-command on master') }}
-          
-          Current nodes:
-          {{ kubectl_get_nodes.stdout | default('Waiting for nodes...') }}

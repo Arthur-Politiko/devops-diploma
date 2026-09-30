@@ -1,0 +1,55 @@
+---
+# Общая подготовка admin-ноды: apt-репозиторий Kubernetes и kubectl.
+# От кластера не зависит — нужен только доступ в интернет через NAT-ноду.
+- name: "[03] Prepare admin node"
+  hosts: admin
+  become: true
+
+  vars:
+    kubernetes_version: "1.35"
+
+  tasks:
+    # Зависимости для подключения apt-репозитория Kubernetes.
+    # Обязательно до скачивания GPG-ключа: нужны curl и gpg.
+    - name: "03-1 Install apt prerequisites"
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - software-properties-common
+        state: present
+        update_cache: true
+
+    - name: "03-2 Create keyrings directory"
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: "03-3 Download Kubernetes GPG key over IPv4"
+      ansible.builtin.shell:
+        cmd: >-
+          curl -4 -fsSL
+          https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key |
+          gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+    - name: "03-4 Add Kubernetes repository"
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/ /"
+        state: present
+        update_cache: true
+
+    - name: "03-5 Install kubectl"
+      ansible.builtin.apt:
+        name: "kubectl={{ kubernetes_version }}.*"
+        state: present
+        force: true
+
+    - name: "03-6 Hold kubectl at current version"
+      ansible.builtin.apt:
+        name: kubectl
+        state: fixed

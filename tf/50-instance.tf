@@ -23,10 +23,10 @@
 resource "yandex_compute_instance" "vms" {
   # depends_on = [data.yandex_compute_image.default]
 
-  for_each = { for vm in var.vms : vm.vm_name => vm }
+  for_each                  = { for vm in var.vms : vm.vm_name => vm }
   allow_stopping_for_update = true
-  name     = each.value.vm_name
-  hostname = each.value.vm_name
+  name                      = each.value.vm_name
+  hostname                  = each.value.vm_name
 
   platform_id = var.vm_platform_id
   zone        = yandex_vpc_subnet.subnets[each.value.vm_subnet].zone
@@ -57,6 +57,9 @@ resource "yandex_compute_instance" "vms" {
     subnet_id  = yandex_vpc_subnet.subnets[each.value.vm_subnet].id
     ip_address = each.value.internal_ip != "" ? each.value.internal_ip : null
     nat        = each.value.nat_enable
+    # Статический публичный адрес только у NAT-ноды, чтобы внешние ссылки
+    # переживали пересборку кластера. Остальные VM получают динамический адрес.
+    nat_ip_address = each.value.vm_role == "nat" ? yandex_vpc_address.nat.external_ipv4_address[0].address : null
     # Attach SG from vm definition (NAT uses "public" SG by default).
     security_group_ids = [yandex_vpc_security_group.sg[each.value.vm_security_group].id]
   }

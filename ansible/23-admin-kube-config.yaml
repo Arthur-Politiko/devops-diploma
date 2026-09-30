@@ -1,0 +1,64 @@
+---
+# Доставка kubeconfig на admin-ноду и проверка доступа к кластеру.
+- name: "[23] Grab kubeconfig from master"
+  hosts: masters
+  become: true
+
+  tasks:
+    - name: "23-1 Grab config from master"
+      ansible.builtin.slurp:
+        src: /etc/kubernetes/admin.conf
+      register: admin_conf
+      when: inventory_hostname == master_name
+
+- name: "[23] Install kubeconfig on admin"
+  hosts: admin
+  become: true
+
+  vars:
+    kubeconfig_path: "/home/ubuntu/.kube/config"
+    kubeconfig_owner: "ubuntu"
+
+  tasks:
+    # Имя control-plane endpoint должно резолвиться и на admin-ноде
+    - name: "23-2 Add master name to hosts file"
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "{{ hostvars[master_name].ansible_host }} {{ master_name }}"
+        regexp: ' {{ master_name }}$'
+        state: present
+
+    - name: "23-3 Create .kube directory"
+      ansible.builtin.file:
+        path: "{{ kubeconfig_path | dirname }}"
+        state: directory
+        owner: "{{ kubeconfig_owner }}"
+        group: "{{ kubeconfig_owner }}"
+        mode: '0755'
+
+    - name: "23-4 Put kubeconfig"
+      ansible.builtin.copy:
+        content: "{{ hostvars[master_name].admin_conf.content | b64decode }}"
+        dest: "{{ kubeconfig_path }}"
+        owner: "{{ kubeconfig_owner }}"
+        group: "{{ kubeconfig_owner }}"
+        mode: '0600'
+
+    - name: "23-5 KUBECONFIG for login shells"
+      ansible.builtin.copy:
+        content: "export KUBECONFIG={{ kubeconfig_path }}\n"
+        dest: /etc/profile.d/kubectl.sh
+        mode: '0644'
+
+    - name: "23-6 Verify cluster access"
+      ansible.builtin.command: kubectl get nodes -o wide
+      become: false
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      changed_when: false
+      register: admin_kubectl_nodes
+
+  post_tasks:
+    - name: Display cluster nodes
+      ansible.builtin.debug:
+        msg: "{{ admin_kubectl_nodes.stdout_lines }}"

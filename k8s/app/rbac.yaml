@@ -1,0 +1,46 @@
+# Namespace приложения и права пайплайна.
+# Применяется плейбуком ansible/33-app-prepare.yaml.
+#
+# Разделение ролей: форму приложения (Deployment, Service, Ingress) применяет
+# Ansible, а CI владеет только версией образа — ему нужно обновить тег и
+# дождаться прокатки. Поэтому прав ровно столько:
+#   deployments  — get/list/watch/patch (patch нужен для set image)
+#   replicasets  — чтение (rollout status смотрит на них)
+#   pods         — чтение (rollout status и диагностика)
+# Никаких create/update на сервисы, ингрессы и секреты у пайплайна нет.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: web-app
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: deployer
+  namespace: web-app
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+# ServiceAccount создаётся плейбуком 32-ci.yaml: под ним пайплайн ходит
+# в кластер с admin-ноды по своему kubeconfig.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-deployer
+  namespace: web-app
+subjects:
+  - kind: ServiceAccount
+    name: ci-deployer
+    namespace: web-app
+roleRef:
+  kind: Role
+  name: deployer
+  apiGroup: rbac.authorization.k8s.io

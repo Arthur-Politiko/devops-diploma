@@ -1,0 +1,48 @@
+# Публикация TeamCity, который живёт на admin-ноде, через ingress кластера.
+#
+# Admin в приватной подсети, поэтому напрямую снаружи недоступен. Вместо
+# отдельного правила DNAT делаем Service без селектора + Endpoints с адресом
+# ноды: ingress-nginx проксирует трафик на внешний адрес, а ссылка остаётся
+# без порта — http://ci.<домен>/ — и не требует новых правил на NAT-ноде.
+apiVersion: v1
+kind: Service
+metadata:
+  name: teamcity-external
+  namespace: {{ ci_namespace }}
+spec:
+  # Селектора нет намеренно: эндпоинты задаются вручную ниже.
+  ports:
+    - name: http
+      port: 8111
+      targetPort: 8111
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: teamcity-external
+  namespace: {{ ci_namespace }}
+subsets:
+  - addresses:
+      - ip: {{ admin_internal_ip }}
+    ports:
+      - name: http
+        port: 8111
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: teamcity
+  namespace: {{ ci_namespace }}
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ci.{{ ci_domain }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: teamcity-external
+                port:
+                  number: 8111

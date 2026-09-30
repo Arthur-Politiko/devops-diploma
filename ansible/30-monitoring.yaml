@@ -1,0 +1,153 @@
+---
+# Установка стека мониторинга в уже собранный кластер.
+# Блок 3x: дополнения, которые ставятся поверх готового кластера, а не при его сборке.
+#
+# Что делает:
+#   1. ставит helm на admin-ноду (tarball с get.helm.sh);
+#   2. создаёт namespace monitoring и Secret с паролем администратора Grafana;
+#   3. ставит чарт kube-prometheus-stack со значениями из k8s/monitoring/values.yaml.
+#
+# Требования:
+#   - на control node: ansible-galaxy collection install kubernetes.core
+#   - пароль Grafana создаётся автоматически в vault/grafana_admin_password
+#     (openssl rand). Каталог vault/ игнорируется git, при повторных запусках
+#     существующий пароль не перезаписывается.
+#
+# Helm ставим версии 3.x: модуль kubernetes.core.helm рассчитан на helm >= 3.0.0,
+# поддержка Helm 4 в нём не заявлена. Управление идёт с admin-ноды, потому что
+# API-сервер кластера доступен только из приватной подсети.
+
+- name: "[30] Deploy monitoring stack"
+  hosts: admin
+  become: false
+  gather_facts: false
+
+  vars:
+    helm_version: "v3.22.0"
+    chart_version: "91.6.0"
+    kubeconfig_path: "/home/ubuntu/.kube/config"
+    # Копия values.yaml на admin-ноде: модуль helm читает файл на целевой машине,
+    # а не на control node.
+    values_file: "/home/ubuntu/kube-prometheus-stack-values.yaml"
+    monitoring_namespace: monitoring
+    grafana_password_file: "{{ playbook_dir }}/../vault/grafana_admin_password"
+
+  tasks:
+    # Пароль генерируется на control node при первом запуске и лежит в vault/
+    # (каталог игнорируется git). Если положить файл заранее — он не перезапишется.
+    - name: "30-1 Ensure Grafana admin password file"
+      ansible.builtin.shell:
+        cmd: "openssl rand -base64 18 > {{ grafana_password_file }}"
+        creates: "{{ grafana_password_file }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      no_log: true
+
+    - name: "30-2 Read Grafana admin password"
+      ansible.builtin.set_fact:
+        grafana_admin_password: "{{ lookup('file', grafana_password_file) | trim }}"
+      no_log: true
+
+    - name: "30-2a Require non-empty Grafana admin password"
+      ansible.builtin.assert:
+        that: grafana_admin_password | length > 0
+        quiet: true
+        fail_msg: >-
+          Файл vault/grafana_admin_password пуст. Пересоздай его:
+          openssl rand -base64 18 > vault/grafana_admin_password
+
+    - name: "30-3 Download and unpack helm {{ helm_version }}"
+      ansible.builtin.unarchive:
+        src: "https://get.helm.sh/helm-{{ helm_version }}-linux-amd64.tar.gz"
+        dest: /tmp
+        remote_src: true
+        creates: "/tmp/linux-amd64/helm"
+      become: true
+
+    - name: "30-4 Put helm into /usr/local/bin"
+      ansible.builtin.copy:
+        src: /tmp/linux-amd64/helm
+        dest: /usr/local/bin/helm
+        mode: "0755"
+        remote_src: true
+      become: true
+
+    # Модуль kubernetes.core.helm требует PyYAML на целевой машине.
+    - name: "30-5 Install PyYAML for the helm module"
+      ansible.builtin.apt:
+        name: python3-yaml
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      become: true
+
+    - name: "30-6 Copy chart values to admin node"
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../k8s/monitoring/values.yaml"
+        dest: "{{ values_file }}"
+        mode: "0644"
+
+    # Namespace нужен до чарта: Secret с паролем Grafana создаётся раньше,
+    # потому что Grafana ссылается на него при старте.
+    - name: "30-7 Create monitoring namespace"
+      ansible.builtin.command: kubectl create namespace {{ monitoring_namespace }}
+      register: namespace_create
+      changed_when: "'created' in namespace_create.stdout"
+      failed_when: namespace_create.rc != 0 and 'AlreadyExists' not in namespace_create.stderr
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    # apply поверх create --dry-run: идемпотентно, без сравнения содержимого.
+    - name: "30-8 Create Grafana admin secret"
+      ansible.builtin.shell:
+        cmd: >-
+          kubectl -n {{ monitoring_namespace }} create secret generic grafana-admin-credentials
+          --from-literal=admin-user=admin
+          --from-literal=admin-password={{ grafana_admin_password | quote }}
+          --dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      no_log: true
+      changed_when: false
+
+    - name: "30-9 Add prometheus-community chart repository"
+      kubernetes.core.helm_repository:
+        name: prometheus-community
+        repo_url: https://prometheus-community.github.io/helm-charts
+
+    # wait_timeout устарел в пользу timeout, но поддерживается всеми версиями коллекции.
+    # 15m с запасом: образы тянутся через NAT-ноду, а core_fraction у нод низкий.
+    - name: "30-10 Install kube-prometheus-stack"
+      kubernetes.core.helm:
+        name: kube-prometheus-stack
+        chart_ref: prometheus-community/kube-prometheus-stack
+        chart_version: "{{ chart_version }}"
+        release_namespace: "{{ monitoring_namespace }}"
+        create_namespace: true
+        values_files:
+          - "{{ values_file }}"
+        wait: true
+        wait_timeout: 15m
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    - name: "30-11 Collect monitoring pods"
+      ansible.builtin.command: kubectl -n {{ monitoring_namespace }} get pods -o wide
+      register: monitoring_pods
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+  post_tasks:
+    - name: Display monitoring pods
+      ansible.builtin.debug:
+        msg: "{{ monitoring_pods.stdout_lines | default(['Waiting for pods...']) }}"
+
+    - name: Display access hint
+      ansible.builtin.debug:
+        msg:
+          - "Grafana:    kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80"
+          - "Prometheus: kubectl -n monitoring port-forward svc/kube-prometheus-stack-prometheus 9090:9090"
+          - "Alertmanager: kubectl -n monitoring port-forward svc/kube-prometheus-stack-alertmanager 9093:9093"
+          - "Логин Grafana: admin / пароль из vault/grafana_admin_password"

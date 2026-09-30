@@ -1,7 +1,7 @@
 ---
 # Настройка master-нод Kubernetes
-- name: "10 Configure Kubernetes master nodes"
-  hosts: master
+- name: "[11] Configure Kubernetes master nodes"
+  hosts: masters
   become: true
   gather_facts: true
 

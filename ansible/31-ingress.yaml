@@ -1,0 +1,149 @@
+---
+# Ingress-контроллер и публикация Grafana на 80 порту.
+# Блок 3x: дополнения в уже собранном кластере, ставится после 30-monitoring.yaml.
+#
+# Как трафик попадает в кластер:
+#   клиент -> статический адрес NAT-ноды :80 -> DNAT -> NodePort воркера :30080
+#          -> kube-proxy -> под ingress-nginx -> Service Grafana
+#
+# Все ноды кластера в приватных подсетях, публичный адрес есть только у NAT-ноды,
+# поэтому вход снаружи делается пробросом порта на ней. Обратный трафик работает
+# за счёт правила MASQUERADE из 02-nat-gateway.yaml: пакет уходит к воркеру через
+# тот же интерфейс, и источник подменяется на адрес NAT-ноды.
+#
+# Имена сервисов собираются из домена ingress_domain. В зоне debugmonkey.ru заведена
+# wildcard-запись *.debugmonkey.ru, которая указывает на статический адрес NAT-ноды
+# (создаётся Terraform: ресурс yandex_vpc_address в tf/41-static-ip.tf, адрес смотри
+# в `terraform output nat-public-ip`). Поэтому адрес ссылок не зависит от пересборки
+# кластера — в отличие от динамического IP, который выдаётся заново.
+#
+# Домен можно переопределить при запуске: -e ingress_domain=example.com
+
+- name: "[31] Deploy ingress controller"
+  hosts: admin
+  become: false
+  gather_facts: false
+
+  vars:
+    ingress_nginx_version: "4.15.1"
+    ingress_namespace: ingress-nginx
+    ingress_domain: "debugmonkey.ru"
+    # NodePort'ы фиксируем, чтобы DNAT на NAT-ноде знал точный порт.
+    ingress_http_nodeport: 30080
+    ingress_https_nodeport: 30443
+    kubeconfig_path: "/home/ubuntu/.kube/config"
+    rendered_dir: "/home/ubuntu/rendered"
+    # Значения чарта держим отдельным словарём: так Ansible отдаёт их
+    # в модуль как структуру, а не как строку.
+    ingress_values:
+      controller:
+        replicaCount: 1
+        service:
+          type: NodePort
+          nodePorts:
+            http: "{{ ingress_http_nodeport }}"
+            https: "{{ ingress_https_nodeport }}"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+
+  tasks:
+    - name: "31-1 Set ingress host"
+      ansible.builtin.set_fact:
+        ingress_host: "grafana.{{ ingress_domain }}"
+
+    - name: "31-2 Add ingress-nginx chart repository"
+      kubernetes.core.helm_repository:
+        name: ingress-nginx
+        repo_url: https://kubernetes.github.io/ingress-nginx
+
+    # Тип сервиса NodePort: облачного балансировщика в кластере нет,
+    # LoadBalancer остался бы в статусе Pending.
+    - name: "31-3 Install ingress-nginx {{ ingress_nginx_version }}"
+      kubernetes.core.helm:
+        name: ingress-nginx
+        chart_ref: ingress-nginx/ingress-nginx
+        chart_version: "{{ ingress_nginx_version }}"
+        release_namespace: "{{ ingress_namespace }}"
+        create_namespace: true
+        values: "{{ ingress_values }}"
+        wait: true
+        wait_timeout: 10m
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    - name: "31-4 Create directory for rendered manifests"
+      ansible.builtin.file:
+        path: "{{ rendered_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: "31-5 Render Grafana ingress"
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../k8s/ingress/grafana-ingress.yaml.j2"
+        dest: "{{ rendered_dir }}/grafana-ingress.yaml"
+        mode: "0644"
+
+    - name: "31-6 Apply Grafana ingress"
+      ansible.builtin.command: kubectl apply -f {{ rendered_dir }}/grafana-ingress.yaml
+      register: ingress_apply
+      changed_when: "'created' in ingress_apply.stdout or 'configured' in ingress_apply.stdout"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    - name: "31-7 Collect ingress state"
+      ansible.builtin.command: kubectl get ingress -A
+      register: ingress_state
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+  post_tasks:
+    - name: Display ingresses
+      ansible.builtin.debug:
+        msg: "{{ ingress_state.stdout_lines | default([]) }}"
+
+- name: "[31] Publish ingress through NAT node"
+  hosts: nat_gateway
+  become: true
+  gather_facts: false
+
+  vars:
+    ingress_http_nodeport: 30080
+    # NodePort открыт на всех нодах, поэтому заворачиваем на первого воркера.
+    dnat_target_ip: "{{ hostvars[groups['workers'][0]]['ansible_host'] }}"
+    # Внутренний адрес самой NAT-ноды. Совпадение по нему обязательно:
+    # без него правило перехватывает весь исходящий HTTP кластера — пакеты
+    # к внешним сайтам приходят на eth0 с портом 80 и уезжают в ingress,
+    # который отвечает 404. Именно так ломался apt внутри сборки образа.
+    nat_internal_ip: "{{ hostvars[groups['nat_gateway'][0]]['ansible_host'] }}"
+
+  tasks:
+    # Python на NAT-ноде нет, поэтому только raw — как в 02-nat-gateway.yaml.
+    # Сначала снимаем оба возможных варианта правила (со старым, без -d, и с новым),
+    # потом добавляем правильный: так задача идемпотентна и чинит уже настроенные ноды.
+    # netfilter-persistent save нужен, чтобы правило пережило перезагрузку.
+    - name: "31-8 DNAT port 80 to ingress NodePort"
+      ansible.builtin.raw: >-
+        IFACE=$(ip route show default | awk 'NR==1 {print $5}') &&
+        iptables -t nat -D PREROUTING -i "$IFACE" -p tcp --dport 80 -j DNAT --to-destination {{ dnat_target_ip }}:{{ ingress_http_nodeport }} 2>/dev/null;
+        iptables -t nat -D PREROUTING -i "$IFACE" -d {{ nat_internal_ip }} -p tcp --dport 80 -j DNAT --to-destination {{ dnat_target_ip }}:{{ ingress_http_nodeport }} 2>/dev/null;
+        iptables -t nat -A PREROUTING -i "$IFACE" -d {{ nat_internal_ip }} -p tcp --dport 80 -j DNAT --to-destination {{ dnat_target_ip }}:{{ ingress_http_nodeport }} &&
+        netfilter-persistent save &&
+        echo "rule-ok"
+      register: dnat
+      changed_when: "'rule-ok' in dnat.stdout"
+
+- name: "[31] Show access URL"
+  hosts: admin
+  become: false
+  gather_facts: false
+
+  tasks:
+    - name: Display access URL
+      ansible.builtin.debug:
+        msg:
+          - "Grafana: http://{{ ingress_host }}/"
+          - "Логин: admin, пароль лежит в vault/grafana_admin_password"
+          - "Проверка: curl -I http://{{ ingress_host }}/login"

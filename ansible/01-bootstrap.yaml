@@ -1,13 +1,23 @@
 ---
-- name: "01 Bootstrap Kubernetes nodes"
-  hosts: master:workers
+- name: "[01] Bootstrap Kubernetes nodes"
+  hosts: masters:workers:admin
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Install Python dependency without Ansible Python
+      ansible.builtin.raw: |
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update && apt-get install -y python3
+
+- name: "[01] Bootstrap Kubernetes nodes with facts"
+  hosts: masters:workers:admin
   become: true
   gather_facts: true
 
   tasks:
-    - name: Install Python dependencies
+    - name: Ensure Python dependency is present
       ansible.builtin.apt:
         name:
           - python3
-          - python3-pip
         state: present

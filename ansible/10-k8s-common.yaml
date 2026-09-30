@@ -1,7 +1,7 @@
 ---
 # Общая подготовка Kubernetes-нод
-- name: "05 Prepare Kubernetes nodes"
-  hosts: master:workers
+- name: "[10] Prepare Kubernetes nodes"
+  hosts: masters:workers
   become: true
   gather_facts: true
 
@@ -9,11 +9,19 @@
     kubernetes_version: "1.35"
 
   tasks:
-    - name: Update apt cache
+    - name: 10-1 Ensure control-plane endpoint in hosts file
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "{{ master_ip }} {{ master_name }}"
+        regexp: ' {{ master_name }}$'
+        state: present
+      # when: inventory_hostname != master_name
+
+    - name: 10-2 Update apt cache
       ansible.builtin.apt:
         update_cache: true
 
-    - name: Install required packages
+    - name: 10-3 Install required packages
       ansible.builtin.apt:
         name:
           - apt-transport-https
@@ -25,18 +33,18 @@
           - software-properties-common
         state: present
 
-    - name: Disable swap immediately
+    - name: 10-4 Disable swap immediately
       ansible.builtin.command: swapoff -a
       changed_when: false
 
-    - name: Remove swap from fstab
+    - name: 10-5 Remove swap from fstab
       ansible.builtin.lineinfile:
         path: /etc/fstab
         regexp: '.*swap.*'
         state: absent
         backup: true
 
-    - name: Load kernel modules
+    - name: 10-6 Load kernel modules
       ansible.builtin.modprobe:
         name: "{{ item }}"
         state: present
@@ -44,7 +52,19 @@
         - overlay
         - br_netfilter
 
-    - name: Configure sysctl parameters for Kubernetes
+    # modprobe действует только до перезагрузки, поэтому модули нужно прописать
+    # в modules-load.d. Без этого после рестарта ноды не поднимается br_netfilter:
+    # Flannel падает с "Failed to check br_netfilter", а новые поды не получают
+    # сеть. Проверено 2026-09-29 — именно это и случилось после перезапуска VM.
+    - name: 10-6a Persist kernel modules across reboot
+      ansible.builtin.copy:
+        content: |
+          overlay
+          br_netfilter
+        dest: /etc/modules-load.d/k8s.conf
+        mode: '0644'
+
+    - name: 10-7 Configure sysctl parameters for Kubernetes
       ansible.builtin.copy:
         content: |
           net.bridge.bridge-nf-call-iptables  = 1
@@ -53,76 +73,81 @@
         dest: /etc/sysctl.d/k8s.conf
         mode: '0644'
 
-    - name: Apply sysctl parameters
+    - name: 10-8 Apply sysctl parameters
       ansible.builtin.command: sysctl --system
       changed_when: false
 
-    - name: Create keyrings directory
+    - name: 10-9 Create keyrings directory
       ansible.builtin.file:
         path: /etc/apt/keyrings
         state: directory
         mode: '0755'
 
-    - name: Add Kubernetes GPG key
-      ansible.builtin.apt_key:
-        url: https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key
-        state: present
+    - name: 10-10 Download Kubernetes GPG key over IPv4
+      ansible.builtin.shell:
+        cmd: >-
+          curl -4 -fsSL
+          https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key |
+          gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
-    - name: Add Kubernetes repository
+    - name: 10-11 Add Kubernetes repository
       ansible.builtin.apt_repository:
-        repo: "deb https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/ /"
+        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/ /"
         state: present
         update_cache: true
 
-    - name: Refresh facts after repository setup
+    - name: 10-12 Refresh facts after repository setup
       ansible.builtin.setup:
 
-    - name: Add Docker GPG key
-      ansible.builtin.apt_key:
-        url: https://download.docker.com/linux/ubuntu/gpg
-        state: present
+    - name: 10-13 Download Docker GPG key over IPv4
+      ansible.builtin.shell:
+        cmd: >-
+          curl -4 -fsSL https://download.docker.com/linux/ubuntu/gpg |
+          gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
+        creates: /etc/apt/keyrings/docker.gpg
 
-    - name: Add Docker repository
+    - name: 10-14  Add Docker repository
       ansible.builtin.apt_repository:
-        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
         state: present
         filename: docker
         update_cache: false
 
-    - name: Update apt cache after repository setup
+    - name: 10-15 Update apt cache after repository setup
       ansible.builtin.apt:
         update_cache: true
 
-    - name: Install containerd
+    - name: 10-16 Install containerd
       ansible.builtin.apt:
         name: containerd
         state: present
 
-    - name: Create containerd config directory
+    - name: 10-17 Create containerd config directory
       ansible.builtin.file:
         path: /etc/containerd
         state: directory
         mode: '0755'
 
-    - name: Generate containerd default configuration
+    - name: 10-18 Generate containerd default configuration
       ansible.builtin.shell:
         cmd: containerd config default > /etc/containerd/config.toml
         creates: /etc/containerd/config.toml
 
-    - name: Configure containerd to use systemd cgroup driver
+    - name: 10-19 Configure containerd to use systemd cgroup driver
       ansible.builtin.replace:
         path: /etc/containerd/config.toml
         regexp: 'SystemdCgroup = false'
         replace: 'SystemdCgroup = true'
       notify: Restart containerd
 
-    - name: Ensure containerd is running
+    - name: 10-20 Ensure containerd is running
       ansible.builtin.systemd:
         name: containerd
         state: started
         enabled: true
 
-    - name: Install kubelet, kubeadm, kubectl
+    - name: 10-21 Install kubelet, kubeadm, kubectl
       ansible.builtin.apt:
         name:
           - kubelet={{ kubernetes_version }}.*
@@ -131,7 +156,7 @@
         state: present
         force: true
 
-    - name: Hold Kubernetes packages at current version
+    - name: 10-22 Hold Kubernetes packages at current version
       ansible.builtin.apt:
         name:
           - kubelet
@@ -139,12 +164,12 @@
           - kubectl
         state: fixed
 
-    - name: Enable containerd service
+    - name: 10-23 Enable containerd service
       ansible.builtin.service:
         name: containerd
         enabled: true
 
-    - name: Enable kubelet service
+    - name: 10-24 Enable kubelet service
       ansible.builtin.service:
         name: kubelet
         enabled: true
