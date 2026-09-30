@@ -8,7 +8,18 @@
 # Требования:
 #   - файл vault/ci-registry-key.json — ключ сервисного аккаунта Yandex Cloud
 #     с ролями container-registry.images.pusher и images.puller на реестр
+#   - файлы vault/diploma-sa-key.json и vault/s3_key — для инфраструктурного
+#     пайплайна terraform (раздел 6 roadmap)
 #   - на admin уже развёрнут kubeconfig (плейбук 23-admin-kube-config.yaml)
+#
+# Что получает агент сборки в контейнере:
+#   /keys/key.json       — ключ реестра (push/pull образов приложения)
+#   /keys/kubeconfig     — kubeconfig сервисного аккаунта ci-deployer
+#   /keys/tf-sa-key.json — ключ сервисного аккаунта для terraform
+#   /keys/s3_key         — статический ключ доступа к Object Storage (backend)
+#   /keys/ci.tfvars      — переменные terraform для CI (terraform.tfvars в git не хранится)
+#   /keys/terraformrc    — зеркало провайдеров Yandex Cloud (HashiCorp блокирует регион)
+#   /usr/local/bin/terraform — бинарь terraform с хоста
 #
 # Первичная настройка TeamCity (лицензия, администратор) делается один раз
 # через веб-интерфейс: Professional бесплатен, ключ не требуется.
@@ -30,6 +41,27 @@
     registry_key_remote: "/home/ubuntu/ci-registry-key.json"
     ci_data_dir: "/home/ubuntu/teamcity"
     rendered_dir: "/home/ubuntu/rendered"
+
+    # --- Terraform для инфраструктурного пайплайна (раздел 6 roadmap) ---
+    # Бинарь ставится на ноду и монтируется в агент: запускать terraform
+    # через docker run нельзя — агент видит рабочую директорию как
+    # /opt/buildagent/work, а демон хоста как /home/ubuntu/teamcity/agent/work,
+    # и путь из контейнера в -v не разрешится.
+    terraform_version: "1.14.8"
+    tf_sa_key_file: "{{ playbook_dir }}/../vault/diploma-sa-key.json"
+    tf_sa_key_remote: "/home/ubuntu/tf-sa-key.json"
+    s3_key_file: "{{ playbook_dir }}/../vault/s3_key"
+    s3_key_remote: "/home/ubuntu/s3_key"
+    tf_tfvars_remote: "/home/ubuntu/ci.tfvars"
+    terraformrc_remote: "/home/ubuntu/terraformrc"
+    # Идентификаторы каталога — не секреты; те же значения лежат в bootstrap/00-bootstrap.sh
+    tf_org_id: "bpfuhii9ok1q5hhitspn"
+    tf_cloud_id: "b1gguv60gg3mvfac0ql6"
+    tf_folder_id: "b1g3ccq6pd5djimr73u2"
+    tf_sa_id: "ajeci4s6cdan53143ob7"
+    # Пересоздать контейнер агента. Нужно при изменении списка монтирований:
+    # без этого плейбук увидит существующий контейнер и пропустит его.
+    ci_recreate_agent: false
     # Адрес API-сервера берём по IP: имя k8s-master-01 резолвится только
     # на admin через /etc/hosts, а kubeconfig читается ещё и из контейнера агента.
     api_server: "https://{{ master_ip }}:6443"
@@ -96,6 +128,101 @@
         - "{{ ci_data_dir }}/agent/conf"
         - "{{ ci_data_dir }}/agent/work"
       become: true
+
+    # ------------------------- Terraform для инфра-пайплайна -------------------------
+    - name: "32-7a Check installed terraform"
+      ansible.builtin.command: terraform version
+      register: tf_check
+      changed_when: false
+      failed_when: false
+
+    - name: "32-7b Install terraform {{ terraform_version }}"
+      when: tf_check.rc != 0 or terraform_version not in tf_check.stdout
+      block:
+        - name: "32-7b-1 Install unzip"
+          ansible.builtin.apt:
+            name: unzip
+            state: present
+            update_cache: true
+          become: true
+
+        # releases.hashicorp.com отдаёт 404 для российских адресов («Content not
+        # available in your region»), поэтому качаем с зеркала Yandex Cloud.
+        - name: "32-7b-2 Download terraform archive"
+          ansible.builtin.get_url:
+            url: >-
+              https://hashicorp-releases.yandexcloud.net/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_amd64.zip
+            dest: "/tmp/terraform-{{ terraform_version }}.zip"
+            mode: "0644"
+
+        - name: "32-7b-3 Unpack terraform"
+          ansible.builtin.unarchive:
+            src: "/tmp/terraform-{{ terraform_version }}.zip"
+            dest: /usr/local/bin
+            remote_src: true
+            mode: "0755"
+          become: true
+
+        - name: "32-7b-4 Verify terraform"
+          ansible.builtin.command: terraform version
+          changed_when: false
+
+    - name: "32-7c Require terraform service account key"
+      ansible.builtin.assert:
+        that: lookup('file', tf_sa_key_file, errors='ignore') | length > 0
+        quiet: true
+        fail_msg: >-
+          Не найден ключ {{ tf_sa_key_file }}. Он создаётся bootstrap/00-bootstrap.sh.
+
+    - name: "32-7d Require S3 static key"
+      ansible.builtin.assert:
+        that: lookup('file', s3_key_file, errors='ignore') | length > 0
+        quiet: true
+        fail_msg: "Не найден файл {{ s3_key_file }} со статическим ключом доступа к Object Storage."
+
+    - name: "32-7e Copy terraform SA key to admin node"
+      ansible.builtin.copy:
+        content: "{{ lookup('file', tf_sa_key_file) }}"
+        dest: "{{ tf_sa_key_remote }}"
+        mode: "0600"
+      no_log: true
+
+    - name: "32-7f Copy S3 static key to admin node"
+      ansible.builtin.copy:
+        content: "{{ lookup('file', s3_key_file) }}"
+        dest: "{{ s3_key_remote }}"
+        mode: "0600"
+      no_log: true
+
+    # terraform.tfvars в git не попадает (см. .gitignore), поэтому для пайплайна
+    # рендерится отдельный файл переменных. Путь к ключу — контейнерный.
+    - name: "32-7g Render ci.tfvars for the terraform pipeline"
+      ansible.builtin.copy:
+        content: |
+          organization_id = "{{ tf_org_id }}"
+          cloud_id        = "{{ tf_cloud_id }}"
+          folder_id       = "{{ tf_folder_id }}"
+          sa_id           = "{{ tf_sa_id }}"
+          sa_key_file     = "/keys/tf-sa-key.json"
+        dest: "{{ tf_tfvars_remote }}"
+        mode: "0644"
+
+    # registry.terraform.io тоже отдаёт 404 для российских адресов, поэтому
+    # terraform init ходит за провайдерами через зеркало Yandex Cloud.
+    - name: "32-7h Render terraformrc with provider mirror"
+      ansible.builtin.copy:
+        content: |
+          provider_installation {
+            network_mirror {
+              url     = "https://terraform-mirror.yandexcloud.net/"
+              include = ["registry.terraform.io/*/*"]
+            }
+            direct {
+              exclude = ["registry.terraform.io/*/*"]
+            }
+          }
+        dest: "{{ terraformrc_remote }}"
+        mode: "0644"
 
     # ------------------------- Kubeconfig для деплоя -------------------------
     - name: "32-8 Create deploy ServiceAccount"
@@ -196,6 +323,21 @@
       changed_when: false
       failed_when: kubectl_bin.rc != 0
 
+    - name: "32-13b Find terraform path"
+      ansible.builtin.shell: command -v terraform
+      register: terraform_bin
+      changed_when: false
+      failed_when: terraform_bin.rc != 0
+
+    # Монтирования меняются редко, а контейнер создаётся только если его ещё нет.
+    # Поэтому при изменении списка монтирований агента просим пересоздание:
+    #   ansible-playbook -i inventory.ini 32-ci.yaml -e ci_recreate_agent=true
+    - name: "32-13c Recreate the agent container when requested"
+      ansible.builtin.command: docker rm -f teamcity-agent
+      when: ci_recreate_agent | bool
+      changed_when: true
+      become: true
+
     - name: "32-14 Run TeamCity agent"
       ansible.builtin.shell: |
         if docker ps -a --format '{{ '{{' }}.Names{{ '}}' }}' | grep -qx teamcity-agent; then
@@ -205,11 +347,17 @@
             --add-host host.docker.internal:host-gateway \
             -e SERVER_URL=http://host.docker.internal:8111 \
             -e AGENT_NAME=k8s-agent-01 \
+            -e TF_CLI_CONFIG_FILE=/keys/terraformrc \
             -v /var/run/docker.sock:/var/run/docker.sock \
             --group-add $(stat -c '%g' /var/run/docker.sock) \
             -v {{ registry_key_remote }}:/keys/key.json:ro \
             -v {{ ci_kubeconfig }}:/keys/kubeconfig:ro \
             -v {{ kubectl_bin.stdout }}:/usr/local/bin/kubectl:ro \
+            -v {{ terraform_bin.stdout }}:/usr/local/bin/terraform:ro \
+            -v {{ tf_sa_key_remote }}:/keys/tf-sa-key.json:ro \
+            -v {{ s3_key_remote }}:/keys/s3_key:ro \
+            -v {{ tf_tfvars_remote }}:/keys/ci.tfvars:ro \
+            -v {{ terraformrc_remote }}:/keys/terraformrc:ro \
             -v {{ ci_data_dir }}/agent/conf:/data/teamcity_agent/conf \
             -v {{ ci_data_dir }}/agent/work:/opt/buildagent/work \
             jetbrains/teamcity-agent:{{ teamcity_tag }} >/dev/null && echo "created"
@@ -272,5 +420,5 @@
         msg:
           - "TeamCity: http://ci.{{ ci_domain }}/"
           - "Контейнеры: teamcity-server и teamcity-agent на admin-ноде"
-          - "Если это первый запуск — пройди настройку в браузере (лицензия, администратор),"
-          - "затем создай проект web-app и две сборки через API или в интерфейсе."
+          - "Конфигурация сборок в базе сервера: создаётся скриптом ci/teamcity-setup.sh"
+          - "Terraform для инфра-пайплайна: {{ terraform_version }}, смонтирован в агент"
