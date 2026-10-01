@@ -37,8 +37,8 @@ output "vms_info" {
 output "connection_commands" {
   description = "SSH connection commands"
   value = {
-    for vm_name, vm in yandex_compute_instance.vms : vm_name => 
-    vm.network_interface[0].nat_ip_address != "" ? 
-      "ssh -o ConnectTimeout=8 -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@${vm.network_interface[0].nat_ip_address} -i ../vault/id_ed25519" : ""
+    for vm_name, vm in yandex_compute_instance.vms : vm_name =>
+    vm.network_interface[0].nat_ip_address != "" ?
+    "ssh -o ConnectTimeout=8 -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@${vm.network_interface[0].nat_ip_address} -i ../vault/id_ed25519" : ""
   }
 }

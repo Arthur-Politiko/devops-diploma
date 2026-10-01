@@ -20,7 +20,7 @@ resource "yandex_storage_bucket" "bucket" {
   #     }
   #   } 
   # }
-    
+
 }
 
 # resource "yandex_storage_object" "object" {

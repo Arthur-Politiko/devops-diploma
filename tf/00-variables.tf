@@ -147,8 +147,8 @@ variable "ssh_private_key" {
 #**********************************************#
 # "https://yandex.cloud/ru/docs/compute/concepts/vm-platforms"
 variable "vm_platform_id" {
-  type        = string
-  default     = "standard-v2"
+  type    = string
+  default = "standard-v2"
 }
 
 #**********************************************#
@@ -156,13 +156,13 @@ variable "default_image" {
   description = "ID образа ОС (не семейство: семейство приводит к пересозданию машин при обновлении образа)"
   type        = string
   # default     = "ubuntu-2404-lts-oslogin"
-  default     = "fd8ee8il5b8tk8oggcs0" # ubuntu-2404-lts на 2026-09-28
+  default = "fd8ee8il5b8tk8oggcs0" # ubuntu-2404-lts на 2026-09-28
 }
 # "https://cloud.yandex.ru/docs/compute/concepts/images"
 variable "vm_image_family" {
-  type        = string
+  type = string
   # default     = "ubuntu-2404-lts-oslogin"
-  default     = "ubuntu-2404-lts"
+  default = "ubuntu-2404-lts"
 }
 
 # variable "vm_image_id" {
@@ -320,8 +320,8 @@ variable "vm_res_type" {
       # disk_volume  = 20
     },
     "bastion" = {
-      cpu = 2
-      ram = 4
+      cpu           = 2
+      ram           = 4
       core_fraction = 20
     },
     "master" = {
@@ -331,8 +331,8 @@ variable "vm_res_type" {
       # disk_volume  = 20
     },
     "worker" = {
-      cpu = 2
-      ram = 4
+      cpu           = 2
+      ram           = 4
       core_fraction = 20
     }
   }
@@ -388,7 +388,7 @@ variable "vm_boot_disks" {
 variable "vms" {
   type = list(object({
     vm_name           = string,
-    vm_role       = optional(string, "default"),
+    vm_role           = optional(string, "default"),
     vm_subnet         = optional(string, "default"),
     vm_security_group = optional(string, "private"),
     sa_name           = optional(string, ""),
@@ -406,9 +406,9 @@ variable "vms" {
     internal_ip = "192.168.1.254" },
     { vm_name = "bastion", nat_enable = true, vm_role = "bastion",
     vm_subnet = "public-a", vm_security_group = "public", user_name = "ubuntu" },
-    { vm_name = "admin", nat_enable = false, vm_role = "admin",
-      vm_subnet = "private-a", vm_security_group = "private", 
-      sa_name = "k8s_admin_sa"},
+    { vm_name   = "admin", nat_enable = false, vm_role = "admin",
+      vm_subnet = "private-a", vm_security_group = "private",
+    sa_name = "k8s_admin_sa" },
     { vm_name = "k8s-master-01", vm_subnet = "private-a", vm_role = "master" },
     { vm_name = "k8s-master-02", vm_subnet = "private-b", vm_role = "master" },
     { vm_name = "k8s-master-03", vm_subnet = "private-a", vm_role = "master" },
@@ -740,7 +740,7 @@ variable "docker" {
   description = "docker registry config variable"
   type = object({
     registry_name = optional(string, "main")
-    repo_name = optional(string, "hub")
+    repo_name     = optional(string, "hub")
   })
   default = {}
 }

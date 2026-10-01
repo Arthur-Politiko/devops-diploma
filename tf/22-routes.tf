@@ -1,5 +1,5 @@
 resource "yandex_vpc_route_table" "rt" {
-  for_each = var.rt
+  for_each   = var.rt
   name       = each.value.name
   network_id = yandex_vpc_network.net.id
   dynamic "static_route" {

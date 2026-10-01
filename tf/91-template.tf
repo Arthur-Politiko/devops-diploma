@@ -41,29 +41,29 @@ resource "local_file" "ansible_config" {
 
 locals {
   admin = [
-    for vm in yandex_compute_instance.vms : 
+    for vm in yandex_compute_instance.vms :
     {
-      name = vm.name,
-      ip   = vm.network_interface[0].ip_address,
-      user_name = [for v in var.vms : v.user_name if v.vm_name == vm.name][0] 
+      name      = vm.name,
+      ip        = vm.network_interface[0].ip_address,
+      user_name = [for v in var.vms : v.user_name if v.vm_name == vm.name][0]
     }
     if can(regex(".*admin.*", vm.name))
   ]
   masters = [
     for vm in yandex_compute_instance.vms :
     {
-      name = vm.name,
-      ip   = vm.network_interface[0].ip_address,
-      user_name = [for v in var.vms : v.user_name if v.vm_name == vm.name][0] 
+      name      = vm.name,
+      ip        = vm.network_interface[0].ip_address,
+      user_name = [for v in var.vms : v.user_name if v.vm_name == vm.name][0]
     }
     if can(regex(".*master.*", vm.name))
   ]
   workers = [
     for vm in yandex_compute_instance.vms :
     {
-      name = vm.name,
-      ip   = vm.network_interface[0].ip_address,
-      user_name = [for v in var.vms : v.user_name if v.vm_name == vm.name][0] 
+      name      = vm.name,
+      ip        = vm.network_interface[0].ip_address,
+      user_name = [for v in var.vms : v.user_name if v.vm_name == vm.name][0]
     }
     if can(regex(".*worker.*", vm.name))
   ]

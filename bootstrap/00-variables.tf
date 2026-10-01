@@ -7,11 +7,11 @@ variable "sa_key_file" {
 }
 
 variable "cloud_id" {
-  type        = string
+  type = string
 }
 
 variable "folder_id" {
-  type        = string
+  type = string
 }
 
 variable "sa_id" {
@@ -27,24 +27,24 @@ variable "default_zone" {
 
 variable "bucket" {
   description = "Configuration for the storage bucket"
-  type        = object({
+  type = object({
     access_flags = object({
       read        = optional(bool, true)
       list        = optional(bool, false)
       config_read = optional(bool, false)
     })
-    name        = string
-    max_size    = optional(number, 1073741824)
-    storage_class = optional(string, "STANDARD")
+    name                    = string
+    max_size                = optional(number, 1073741824)
+    storage_class           = optional(string, "STANDARD")
     disabled_statickey_auth = bool
-    versioning = bool
-    sse_algorithm = optional(string, "aws:kms")
+    versioning              = bool
+    sse_algorithm           = optional(string, "aws:kms")
   })
   default = {
-    access_flags = {}
-    name         = "tfstate-devops-diploma"
+    access_flags            = {}
+    name                    = "tfstate-devops-diploma"
     disabled_statickey_auth = false
-    versioning = true
+    versioning              = true
   }
 }
 
