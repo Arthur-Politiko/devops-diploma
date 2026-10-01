@@ -47,6 +47,7 @@ Desktop.ini
 *.swp
 *.swo
 *~
+~*
 .idea/
 .vscode/
 *.iml
