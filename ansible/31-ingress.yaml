@@ -121,14 +121,23 @@
 
   tasks:
     # Python на NAT-ноде нет, поэтому только raw — как в 02-nat-gateway.yaml.
-    # Сначала снимаем оба возможных варианта правила (со старым, без -d, и с новым),
-    # потом добавляем правильный: так задача идемпотентна и чинит уже настроенные ноды.
+    #
+    # Снимаем ВСЕ правила DNAT для 80 порта, не глядя на адрес назначения.
+    # Так надо потому, что после пересборки кластера внутренние адреса worker'ов
+    # меняются: правило прошлого прогона указывает на машину, которой больше нет.
+    # iptables берёт первое совпадение, поэтому оставленное старое правило перед
+    # новым означает мёртвый вход — именно это и случилось на первом прогоне
+    # с нуля.
+    #
+    # Удаляем по номеру правила, а не по спецификации: `-D` требует точного
+    # совпадения канонизированного правила, и попытка удалить «правило с любым
+    # адресом назначения» не находит ничего (проверено — остались дубликаты).
+    # Номера берём с конца, чтобы удаление не сдвигало следующие.
     # netfilter-persistent save нужен, чтобы правило пережило перезагрузку.
     - name: "31-8 DNAT port 80 to ingress NodePort"
       ansible.builtin.raw: >-
         IFACE=$(ip route show default | awk 'NR==1 {print $5}') &&
-        iptables -t nat -D PREROUTING -i "$IFACE" -p tcp --dport 80 -j DNAT --to-destination {{ dnat_target_ip }}:{{ ingress_http_nodeport }} 2>/dev/null;
-        iptables -t nat -D PREROUTING -i "$IFACE" -d {{ nat_internal_ip }} -p tcp --dport 80 -j DNAT --to-destination {{ dnat_target_ip }}:{{ ingress_http_nodeport }} 2>/dev/null;
+        for n in $(iptables -t nat -L PREROUTING --line-numbers -n | awk '/DNAT/ && /dpt:80/ {print $1}' | sort -rn); do iptables -t nat -D PREROUTING "$n"; done;
         iptables -t nat -A PREROUTING -i "$IFACE" -d {{ nat_internal_ip }} -p tcp --dport 80 -j DNAT --to-destination {{ dnat_target_ip }}:{{ ingress_http_nodeport }} &&
         netfilter-persistent save &&
         echo "rule-ok"

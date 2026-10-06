@@ -1,7 +1,7 @@
 ---
 # Jenkins — CI/CD сервер на admin-ноде. Смысл затеи в том, что настраивать
 # в интерфейсе не нужно ничего: установка описана здесь, пользователь, права
-# и job'ы — в k8s/ci/jenkins-casc.yaml.j2, логика сборок — в Jenkinsfile
+# и job'ы — в ci/jenkins/jenkins-casc.yaml.j2, логика сборок — в Jenkinsfile
 # репозитория. Публикуется на ci.<домен> — тот же адрес, что был у TeamCity.
 #
 # Требует, чтобы до него отработал 32-ci.yaml: он кладёт на ноду ключ реестра,
@@ -112,7 +112,7 @@
     # Пароль подставляется из vault/ в момент рендера — в git он не попадает.
     - name: "34-8 Render JCasC configuration"
       ansible.builtin.template:
-        src: "{{ playbook_dir }}/../k8s/ci/jenkins-casc.yaml.j2"
+        src: "{{ playbook_dir }}/../ci/jenkins/jenkins-casc.yaml.j2"
         dest: "{{ jenkins_casc_remote }}"
         mode: "0600"
       vars:
