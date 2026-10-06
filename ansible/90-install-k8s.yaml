@@ -8,19 +8,25 @@
 # Номер файла совпадает с шагом выполнения.
 #
 # Порядок выполнения:
-# 1.  01-bootstrap.yaml - установка Python на узлы
-# 2.  03-admin-prepare.yaml - apt-репозиторий Kubernetes и kubectl на admin
-# 3.  10-k8s-common.yaml - подготовка узлов и установка Kubernetes
-# 4.  11-master.yaml - настройка master-нод
-# 5.  20-kubeadm-init.yaml - инициализация кластера на master
-# 6.  21-kubeadm-join.yaml - присоединение workers к кластеру
-# 7.  22-kubeadm-join-master.yaml - присоединение дополнительных master
-# 8.  23-admin-kube-config.yaml - kubeconfig и проверка доступа с admin
-# 9.  24-flannel.yaml - CNI и ожидание готовности узлов
-# 10. 30-monitoring.yaml - стек мониторинга (kube-prometheus-stack)
-# 11. 31-ingress.yaml - ingress-контроллер и публикация Grafana на 80 порту
-# 12. 32-ci.yaml - TeamCity: сервер, агент сборки и веб-интерфейс на 80 порту
-# 13. 33-app-prepare.yaml - namespace приложения и права пайплайна на деплой
+# 1.  02-nat-gateway.yaml - NAT и masquerade: без него у приватных нод нет
+#     интернета, и все шаги, которые что-то скачивают (apt, pkgs.k8s.io,
+#     download.docker.com, get.helm.sh, git clone), падают
+# 2.  01-bootstrap.yaml - установка Python на узлы
+# 3.  03-admin-prepare.yaml - apt-репозиторий Kubernetes и kubectl на admin
+# 4.  10-k8s-common.yaml - подготовка узлов и установка Kubernetes
+# 5.  11-master.yaml - настройка master-нод
+# 6.  20-kubeadm-init.yaml - инициализация кластера на master
+# 7.  21-kubeadm-join.yaml - присоединение workers к кластеру
+# 8.  22-kubeadm-join-master.yaml - присоединение дополнительных master
+# 9.  23-admin-kube-config.yaml - kubeconfig и проверка доступа с admin
+# 10. 24-flannel.yaml - CNI и ожидание готовности узлов
+# 11. 30-monitoring.yaml - стек мониторинга (kube-prometheus-stack)
+# 12. 31-ingress.yaml - ingress-контроллер и публикация Grafana на 80 порту
+# 13. 32-ci.yaml - TeamCity: сервер, агент сборки и веб-интерфейс на 80 порту
+# 14. 33-app-prepare.yaml - namespace приложения и права пайплайна на деплой
+
+- name: "02 Configure NAT gateway"
+  import_playbook: 02-nat-gateway.yaml
 
 - name: "01 Bootstrap Kubernetes nodes"
   import_playbook: 01-bootstrap.yaml

@@ -2,14 +2,19 @@
 
 set -euo pipefail
 
+# Пути считаем от самого скрипта, а не от текущего каталога: запускать его
+# можно и из корня репозитория, и из bootstrap/.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 ORG_ID="bpfuhii9ok1q5hhitspn"
 CLOUD_ID="b1gguv60gg3mvfac0ql6"
 FOLDER_NAME=devops-diploma
 FOLDER_ID=""
 SA_NAME=diploma-sa
-SA_KEY=../vault/diploma-sa-key.json
+SA_KEY="$REPO_ROOT/vault/diploma-sa-key.json"
 SA_ID=""
-SSH_KEY_DIR=../vault
+SSH_KEY_DIR="$REPO_ROOT/vault"
 SSH_KEY_NAME=id_ed25519
 OSLOGIN_LOGIN=ubuntu
 OSLOGIN_UID=2000
@@ -160,20 +165,32 @@ function generate_service_account_key() {
   yc iam key create --service-account-id "$sa_id" --output "$SA_KEY" && sleep 10
 }
 
-function update_tfvars() {
-  local file_name=$1
-  local org_id=$2
-  local cloud_id=$3
-  local folder_id=$4
-  local sa_id=$5
-  local sa_key_file=$6
+# tfvars для bootstrap/: organization_id этому модулю не нужен — переменной
+# с таким именем в bootstrap/00-variables.tf нет, и лишний ключ terraform
+# отвергнет. Путь к ключу — относительно каталога bootstrap/.
+function write_bootstrap_tfvars() {
+  local folder_id=$1
+  local sa_id=$2
 
-  cat > "$file_name" <<EOL
-org_id = "$org_id"
-cloud_id = "$cloud_id"
-folder_id = "$folder_id"
-sa_id = "$sa_id"
-sa_key_file = "$sa_key_file"
+  cat > "$SCRIPT_DIR/terraform.tfvars" <<EOL
+cloud_id    = "$CLOUD_ID"
+folder_id   = "$folder_id"
+sa_id       = "$sa_id"
+sa_key_file = "../vault/diploma-sa-key.json"
+EOL
+}
+
+# tfvars для основной конфигурации: ей нужен organization_id.
+function write_tf_tfvars() {
+  local folder_id=$1
+  local sa_id=$2
+
+  cat > "$REPO_ROOT/tf/terraform.tfvars" <<EOL
+organization_id = "$ORG_ID"
+cloud_id        = "$CLOUD_ID"
+folder_id       = "$folder_id"
+sa_id           = "$sa_id"
+sa_key_file     = "../vault/diploma-sa-key.json"
 EOL
 }
 
@@ -227,9 +244,13 @@ else
   echo "Service account key generated at $SA_KEY"
 fi
 
-if ! update_tfvars "terraform.tfvars" "$ORG_ID" "$CLOUD_ID" "$FOLDER_ID" "$SA_ID"; then
-  echo "Failed to update terraform.tfvars"
+if ! write_bootstrap_tfvars "$FOLDER_ID" "$SA_ID"; then
+  echo "Failed to write $SCRIPT_DIR/terraform.tfvars"
   exit 1
-else
-  echo "terraform.tfvars updated with cloud_id, folder_id, sa_id, and org_id"
 fi
+
+if ! write_tf_tfvars "$FOLDER_ID" "$SA_ID"; then
+  echo "Failed to write $REPO_ROOT/tf/terraform.tfvars"
+  exit 1
+fi
+echo "terraform.tfvars записаны: bootstrap/terraform.tfvars и tf/terraform.tfvars"

@@ -38,9 +38,13 @@ resource "yandex_compute_instance" "vms" {
   # service_account_id = each.value.sa_name == "k8s_admin_sa" ? yandex_iam_service_account.k8s_admin_sa.id : null
   # service_account_id = var.sa_id
   # metadata = data.metadata.instance[each.value.vm_name].metadata
+  # Путь к публичному ключу берём из var.ssh_key, а не из metadata: в CI
+  # каталога vault/ нет — он в .gitignore, — и ключ приезжает в агент
+  # смонтированным файлом. Значение в metadata остаётся признаком
+  # «этой VM ключ нужен».
   metadata = {
     "enable-oslogin" = each.value.metadata["enable-oslogin"]
-    "ssh-keys"       = each.value.metadata["ssh-keys"] != "" ? "${each.value.user_name}:${file(each.value.metadata["ssh-keys"])}" : ""
+    "ssh-keys"       = each.value.metadata["ssh-keys"] != "" ? "${each.value.user_name}:${file(var.ssh_key)}" : ""
     "user-data"      = each.value.metadata["user-data"] != "" ? file("${path.module}/${each.value.metadata["user-data"]}") : ""
   }
 

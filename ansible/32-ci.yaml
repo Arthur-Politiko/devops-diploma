@@ -52,6 +52,10 @@
     tf_sa_key_remote: "/home/ubuntu/tf-sa-key.json"
     s3_key_file: "{{ playbook_dir }}/../vault/s3_key"
     s3_key_remote: "/home/ubuntu/s3_key"
+    # Публичный SSH-ключ нужен terraform в пайплайне: он подставляет его в
+    # metadata машин (var.ssh_key). Секретом не является.
+    ssh_pub_key_file: "{{ playbook_dir }}/../vault/id_ed25519.pub"
+    ssh_pub_key_remote: "/home/ubuntu/id_ed25519.pub"
     tf_tfvars_remote: "/home/ubuntu/ci.tfvars"
     terraformrc_remote: "/home/ubuntu/terraformrc"
     # Идентификаторы каталога — не секреты; те же значения лежат в bootstrap/00-bootstrap.sh
@@ -194,6 +198,14 @@
         mode: "0600"
       no_log: true
 
+    # terraform читает этот файл при планировании (var.ssh_key), а в чекауте
+    # сборки каталога vault/ нет.
+    - name: "32-7f2 Copy SSH public key to admin node"
+      ansible.builtin.copy:
+        src: "{{ ssh_pub_key_file }}"
+        dest: "{{ ssh_pub_key_remote }}"
+        mode: "0644"
+
     # terraform.tfvars в git не попадает (см. .gitignore), поэтому для пайплайна
     # рендерится отдельный файл переменных. Путь к ключу — контейнерный.
     - name: "32-7g Render ci.tfvars for the terraform pipeline"
@@ -204,6 +216,7 @@
           folder_id       = "{{ tf_folder_id }}"
           sa_id           = "{{ tf_sa_id }}"
           sa_key_file     = "/keys/tf-sa-key.json"
+          ssh_key         = "/keys/id_ed25519.pub"
         dest: "{{ tf_tfvars_remote }}"
         mode: "0644"
 
@@ -223,6 +236,19 @@
           }
         dest: "{{ terraformrc_remote }}"
         mode: "0644"
+
+    # ------------------ Namespace приложения до ServiceAccount ------------------
+    # SA создаётся внутри namespace, а полный манифест (Namespace, Role,
+    # RoleBinding) применяет 33-app-prepare.yaml — в цепочке 90-install-k8s.yaml
+    # он идёт позже. Поэтому namespace заводим здесь; повторный apply в 33
+    # идемпотентен, а RoleBinding ссылается на SA, созданный ниже.
+    - name: "32-7i Ensure app namespace exists"
+      ansible.builtin.command: kubectl create namespace {{ app_namespace }}
+      register: app_ns_create
+      changed_when: "'created' in app_ns_create.stdout"
+      failed_when: app_ns_create.rc != 0 and 'AlreadyExists' not in app_ns_create.stderr
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
 
     # ------------------------- Kubeconfig для деплоя -------------------------
     - name: "32-8 Create deploy ServiceAccount"
@@ -356,6 +382,7 @@
             -v {{ terraform_bin.stdout }}:/usr/local/bin/terraform:ro \
             -v {{ tf_sa_key_remote }}:/keys/tf-sa-key.json:ro \
             -v {{ s3_key_remote }}:/keys/s3_key:ro \
+            -v {{ ssh_pub_key_remote }}:/keys/id_ed25519.pub:ro \
             -v {{ tf_tfvars_remote }}:/keys/ci.tfvars:ro \
             -v {{ terraformrc_remote }}:/keys/terraformrc:ro \
             -v {{ ci_data_dir }}/agent/conf:/data/teamcity_agent/conf \

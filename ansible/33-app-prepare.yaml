@@ -58,6 +58,9 @@
         dest: "{{ rendered_dir }}/app-rbac.yaml"
         mode: "0644"
 
+    # Namespace может уже существовать: его создаёт 32-ci.yaml перед тем, как
+    # завести в нём ServiceAccount пайплайна. Apply идемпотентен — здесь
+    # досоздаются Role и RoleBinding.
     - name: "33-5 Apply namespace and pipeline rights"
       ansible.builtin.command: kubectl apply -f {{ rendered_dir }}/app-rbac.yaml
       register: app_rbac
