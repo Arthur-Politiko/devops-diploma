@@ -5,3 +5,5 @@ workflow-multibranch
 git
 ws-cleanup
 pipeline-stage-view
+# timestamps() в Jenkinsfile без него не разбирается: опция требует плагин.
+timestamper
