@@ -8,6 +8,8 @@ resource "yandex_container_repository" "repo" {
 
 
 
+
+
 # --------------   OUTPUT --------------- #
 output "registry-id" {
   value = yandex_container_registry.registry.id
