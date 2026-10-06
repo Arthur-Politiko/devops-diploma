@@ -128,6 +128,12 @@ variable "vpc_sub_name" {
 #   description = "VPC subnet name"
 # }
 
+variable "vpc_address_name" {
+  type        = string
+  default     = "nat-public-ip"
+  description = "VPC address name"
+}
+
 #**********************************************#
 # ssh-keygen -t ed25519
 variable "ssh_key" {

@@ -1,17 +1,11 @@
 # Статический публичный адрес для NAT-ноды.
 resource "yandex_vpc_address" "nat" {
-  name = "nat-public-ip"
+  name = var.vpc_address_name
 
   external_ipv4_address {
     zone_id = var.subnets["public-a"].zone
   }
 }
-
-
-
-
-
-
 
 # --------------   OUTPUT --------------- #
 output "nat-public-ip" {
