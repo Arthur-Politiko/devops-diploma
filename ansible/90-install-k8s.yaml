@@ -22,9 +22,9 @@
 # 10. 24-flannel.yaml - CNI и ожидание готовности узлов
 # 11. 30-monitoring.yaml - стек мониторинга (kube-prometheus-stack)
 # 12. 31-ingress.yaml - ingress-контроллер и публикация Grafana на 80 порту
-# 13. 32-ci.yaml - TeamCity: сервер, агент сборки и веб-интерфейс на 80 порту
+# 13. 32-ci.yaml - подготовка admin-ноды для CI: Docker, ключи, права пайплайна
 # 14. 33-app-prepare.yaml - namespace приложения и права пайплайна на деплой
-# 15. 34-jenkins.yaml - Jenkins на admin-ноде (миграция с TeamCity, раздел 9)
+# 15. 34-jenkins.yaml - Jenkins на admin-ноде: CI/CD сервер и публикация UI
 
 - name: "02 Configure NAT gateway"
   import_playbook: 02-nat-gateway.yaml
@@ -62,7 +62,7 @@
 - name: "31 Deploy ingress controller"
   import_playbook: 31-ingress.yaml
 
-- name: "32 Deploy TeamCity"
+- name: "32 Prepare admin node for CI"
   import_playbook: 32-ci.yaml
 
 - name: "33 Prepare app namespace"

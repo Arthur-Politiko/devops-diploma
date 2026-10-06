@@ -52,6 +52,21 @@ jobs:
             }
           }
         }
+        // Найденные теги по умолчанию не собираются: сканер пишет
+        // «No automatic build triggered». Стратегию сборки тегов даёт плагин
+        // basic-branch-build-strategies, но метода buildStrategies у
+        // multibranch-джобы в этой версии job-dsl нет — он есть только
+        // у organization folder. Поэтому узел дописывается напрямую в XML:
+        // в интерфейсе это раздел «Build strategies» внутри branch source.
+        // Границы по возрасту выставлены так, чтобы правило охватывало все теги.
+        configure {
+          it / 'sources' / 'data' / 'jenkins.branch.BranchSource' << 'buildStrategies' {
+            'jenkins.branch.buildstrategies.basic.TagBuildStrategyImpl' {
+              atLeastMillis(-1L)
+              atMostMillis(315360000000L)
+            }
+          }
+        }
         factory {
           workflowBranchProjectFactory {
             scriptPath('Jenkinsfile')

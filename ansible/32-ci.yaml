@@ -1,9 +1,16 @@
 ---
-# TeamCity на admin-ноде: сервер, агент сборки и публикация веб-интерфейса.
+# Подготовка admin-ноды для CI/CD: Docker, ключи и права пайплайна.
 # Блок 3x: дополнения в уже собранном кластере.
 #
+# Сам CI ставится отдельно — плейбуком 34-jenkins.yaml. Здесь остаётся то, что
+# нужно ему на ноде:
+#   Docker              — сборка образов хостовым демоном (никакого dind)
+#   ключ реестра        — push/pull образов приложения
+#   terraform и ключи   — инфраструктурный пайплайн (раздел 6 roadmap)
+#   SA, токен, kubeconfig ci-deployer — права пайплайна на деплой
+#
 # Почему CI вынесен из кластера: сборка идёт хостовым Docker (никакого dind
-# и privileged-подов), данные TeamCity лежат на диске ноды, kubectl уже под рукой.
+# и privileged-подов), данные лежат на диске ноды, kubectl уже под рукой.
 #
 # Требования:
 #   - файл vault/ci-registry-key.json — ключ сервисного аккаунта Yandex Cloud
@@ -12,7 +19,7 @@
 #     пайплайна terraform (раздел 6 roadmap)
 #   - на admin уже развёрнут kubeconfig (плейбук 23-admin-kube-config.yaml)
 #
-# Что получает агент сборки в контейнере:
+# Что получает CI в контейнере (монтирует 34-jenkins.yaml):
 #   /keys/key.json       — ключ реестра (push/pull образов приложения)
 #   /keys/kubeconfig     — kubeconfig сервисного аккаунта ci-deployer
 #   /keys/tf-sa-key.json — ключ сервисного аккаунта для terraform
@@ -20,33 +27,24 @@
 #   /keys/ci.tfvars      — переменные terraform для CI (terraform.tfvars в git не хранится)
 #   /keys/terraformrc    — зеркало провайдеров Yandex Cloud (HashiCorp блокирует регион)
 #   /usr/local/bin/terraform — бинарь terraform с хоста
-#
-# Первичная настройка TeamCity (лицензия, администратор) делается один раз
-# через веб-интерфейс: Professional бесплатен, ключ не требуется.
 
-- name: "[32] Deploy TeamCity on admin node"
+- name: "[32] Prepare admin node for CI"
   hosts: admin
   become: false
   gather_facts: true
 
   vars:
-    ci_domain: "debugmonkey.ru"
-    ci_namespace: "ci"
     app_namespace: "web-app"
     deploy_sa: "ci-deployer"
-    teamcity_tag: "2026.2"
     kubeconfig_path: "/home/ubuntu/.kube/config"
     ci_kubeconfig: "/home/ubuntu/ci-kubeconfig"
     registry_key_file: "{{ playbook_dir }}/../vault/ci-registry-key.json"
     registry_key_remote: "/home/ubuntu/ci-registry-key.json"
-    ci_data_dir: "/home/ubuntu/teamcity"
-    rendered_dir: "/home/ubuntu/rendered"
 
     # --- Terraform для инфраструктурного пайплайна (раздел 6 roadmap) ---
-    # Бинарь ставится на ноду и монтируется в агент: запускать terraform
-    # через docker run нельзя — агент видит рабочую директорию как
-    # /opt/buildagent/work, а демон хоста как /home/ubuntu/teamcity/agent/work,
-    # и путь из контейнера в -v не разрешится.
+    # Бинарь ставится на ноду и монтируется в контейнер CI: запускать terraform
+    # через docker run нельзя — контейнер видит рабочую директорию не так, как
+    # демон хоста, и путь из контейнера в -v не разрешится.
     terraform_version: "1.14.8"
     tf_sa_key_file: "{{ playbook_dir }}/../vault/diploma-sa-key.json"
     tf_sa_key_remote: "/home/ubuntu/tf-sa-key.json"
@@ -63,15 +61,9 @@
     tf_cloud_id: "b1gguv60gg3mvfac0ql6"
     tf_folder_id: "b1g3ccq6pd5djimr73u2"
     tf_sa_id: "ajeci4s6cdan53143ob7"
-    # Пересоздать контейнер агента. Нужно при изменении списка монтирований:
-    # без этого плейбук увидит существующий контейнер и пропустит его.
-    ci_recreate_agent: false
     # Адрес API-сервера берём по IP: имя k8s-master-01 резолвится только
-    # на admin через /etc/hosts, а kubeconfig читается ещё и из контейнера агента.
+    # на admin через /etc/hosts, а kubeconfig читается ещё и из контейнера CI.
     api_server: "https://{{ master_ip }}:6443"
-    # Адрес самой admin-ноды — его получают Endpoints, через которые ingress
-    # проксирует трафик на TeamCity, живущий вне кластера.
-    admin_internal_ip: "{{ ansible_host }}"
 
   tasks:
     # ------------------------- Docker -------------------------
@@ -121,17 +113,6 @@
         dest: "{{ registry_key_remote }}"
         mode: "0600"
       no_log: true
-
-    - name: "32-7 Create TeamCity data directories"
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        mode: "0777"
-      loop:
-        - "{{ ci_data_dir }}/server"
-        - "{{ ci_data_dir }}/agent/conf"
-        - "{{ ci_data_dir }}/agent/work"
-      become: true
 
     # ------------------------- Terraform для инфра-пайплайна -------------------------
     - name: "32-7a Check installed terraform"
@@ -321,131 +302,11 @@
         creates: "{{ ci_kubeconfig }}"
       no_log: true
 
-    # ------------------------- Контейнеры TeamCity -------------------------
-    - name: "32-13 Run TeamCity server"
-      ansible.builtin.shell: |
-        if docker ps -a --format '{{ '{{' }}.Names{{ '}}' }}' | grep -qx teamcity-server; then
-          echo "exists"
-        else
-          docker run -d --name teamcity-server --restart always \
-            -p 8111:8111 \
-            -e TEAMCITY_SERVER_MEM_OPTS="-Xmx2048m" \
-            -v {{ ci_data_dir }}/server:/data/teamcity_server/datadir \
-            jetbrains/teamcity-server:{{ teamcity_tag }} >/dev/null && echo "created"
-        fi
-      register: tc_server
-      changed_when: "'created' in tc_server.stdout"
-      become: true
-
-    # Агент собирает образы хостовым Docker: пробрасываем сокет и добавляем
-    # группу сокета, чтобы пользователь агента имел к нему доступ.
-    # kubectl монтируем с хоста — скачивать его в шаге сборки не нужно.
-    # Путь к kubectl узнаём на месте: он ставится пакетом и лежит в /usr/bin,
-    # а не в /usr/local/bin. Если смонтировать несуществующий путь, Docker создаст
-    # на его месте каталог, и внутри контейнера kubectl окажется директорией.
-    - name: "32-13a Find kubectl path"
-      ansible.builtin.shell: command -v kubectl
-      register: kubectl_bin
-      changed_when: false
-      failed_when: kubectl_bin.rc != 0
-
-    - name: "32-13b Find terraform path"
-      ansible.builtin.shell: command -v terraform
-      register: terraform_bin
-      changed_when: false
-      failed_when: terraform_bin.rc != 0
-
-    # Монтирования меняются редко, а контейнер создаётся только если его ещё нет.
-    # Поэтому при изменении списка монтирований агента просим пересоздание:
-    #   ansible-playbook -i inventory.ini 32-ci.yaml -e ci_recreate_agent=true
-    - name: "32-13c Recreate the agent container when requested"
-      ansible.builtin.command: docker rm -f teamcity-agent
-      when: ci_recreate_agent | bool
-      changed_when: true
-      become: true
-
-    - name: "32-14 Run TeamCity agent"
-      ansible.builtin.shell: |
-        if docker ps -a --format '{{ '{{' }}.Names{{ '}}' }}' | grep -qx teamcity-agent; then
-          echo "exists"
-        else
-          docker run -d --name teamcity-agent --restart always \
-            --add-host host.docker.internal:host-gateway \
-            -e SERVER_URL=http://host.docker.internal:8111 \
-            -e AGENT_NAME=k8s-agent-01 \
-            -e TF_CLI_CONFIG_FILE=/keys/terraformrc \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            --group-add $(stat -c '%g' /var/run/docker.sock) \
-            -v {{ registry_key_remote }}:/keys/key.json:ro \
-            -v {{ ci_kubeconfig }}:/keys/kubeconfig:ro \
-            -v {{ kubectl_bin.stdout }}:/usr/local/bin/kubectl:ro \
-            -v {{ terraform_bin.stdout }}:/usr/local/bin/terraform:ro \
-            -v {{ tf_sa_key_remote }}:/keys/tf-sa-key.json:ro \
-            -v {{ s3_key_remote }}:/keys/s3_key:ro \
-            -v {{ ssh_pub_key_remote }}:/keys/id_ed25519.pub:ro \
-            -v {{ tf_tfvars_remote }}:/keys/ci.tfvars:ro \
-            -v {{ terraformrc_remote }}:/keys/terraformrc:ro \
-            -v {{ ci_data_dir }}/agent/conf:/data/teamcity_agent/conf \
-            -v {{ ci_data_dir }}/agent/work:/opt/buildagent/work \
-            jetbrains/teamcity-agent:{{ teamcity_tag }} >/dev/null && echo "created"
-        fi
-      register: tc_agent
-      changed_when: "'created' in tc_agent.stdout"
-      become: true
-
-    # ------------------------- Публикация UI в кластере -------------------------
-    - name: "32-15 Create namespace for CI objects"
-      ansible.builtin.command: kubectl create namespace {{ ci_namespace }}
-      register: ns_create
-      changed_when: "'created' in ns_create.stdout"
-      failed_when: ns_create.rc != 0 and 'AlreadyExists' not in ns_create.stderr
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
-
-    # Старые объекты CI из кластера больше не нужны: сервер и агент теперь на VM.
-    - name: "32-16 Remove in-cluster TeamCity workloads"
-      ansible.builtin.command: >-
-        kubectl -n {{ ci_namespace }} delete deployment teamcity-server teamcity-agent
-        serviceaccount teamcity-agent --ignore-not-found=true
-      register: ci_cleanup
-      changed_when: "'deleted' in ci_cleanup.stdout"
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
-
-    - name: "32-17 Create directory for rendered manifests"
-      ansible.builtin.file:
-        path: "{{ rendered_dir }}"
-        state: directory
-        mode: "0755"
-
-    - name: "32-18 Render external service manifests"
-      ansible.builtin.template:
-        src: "{{ playbook_dir }}/../k8s/ci/ci-external.yaml.j2"
-        dest: "{{ rendered_dir }}/ci-external.yaml"
-        mode: "0644"
-
-    - name: "32-19 Apply external service manifests"
-      ansible.builtin.command: kubectl apply -f {{ rendered_dir }}/ci-external.yaml
-      register: ci_external
-      changed_when: "'created' in ci_external.stdout or 'configured' in ci_external.stdout"
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
-
-    - name: "32-20 Wait for TeamCity server to answer"
-      ansible.builtin.uri:
-        url: "http://localhost:8111/healthCheck/healthy"
-        status_code: 200
-      register: tc_health
-      until: tc_health.status == 200
-      retries: 30
-      delay: 10
-      changed_when: false
-
   post_tasks:
-    - name: Display URL and next steps
+    - name: Display what was prepared
       ansible.builtin.debug:
         msg:
-          - "TeamCity: http://ci.{{ ci_domain }}/"
-          - "Контейнеры: teamcity-server и teamcity-agent на admin-ноде"
-          - "Конфигурация сборок в базе сервера: создаётся скриптом ci/teamcity-setup.sh"
-          - "Terraform для инфра-пайплайна: {{ terraform_version }}, смонтирован в агент"
+          - "Docker, ключ реестра и ключи terraform разложены на admin-ноде"
+          - "Права пайплайна на деплой: ServiceAccount {{ deploy_sa }} в namespace {{ app_namespace }}"
+          - "Terraform для инфра-пайплайна: {{ terraform_version }}"
+          - "Сам CI ставится следующим шагом — плейбуком 34-jenkins.yaml"

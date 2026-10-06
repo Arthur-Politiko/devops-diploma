@@ -1,9 +1,8 @@
 ---
-# Jenkins — CI/CD сервер на admin-ноде. Ставится рядом с TeamCity: свой порт
-# и свой хост, конфигурацию TeamCity не трогает. Смысл затеи в том, что
-# настраивать в интерфейсе не нужно ничего: установка описана здесь,
-# пользователь, права и job'ы — в k8s/ci/jenkins-casc.yaml.j2, логика сборок —
-# в Jenkinsfile репозитория.
+# Jenkins — CI/CD сервер на admin-ноде. Смысл затеи в том, что настраивать
+# в интерфейсе не нужно ничего: установка описана здесь, пользователь, права
+# и job'ы — в k8s/ci/jenkins-casc.yaml.j2, логика сборок — в Jenkinsfile
+# репозитория. Публикуется на ci.<домен> — тот же адрес, что был у TeamCity.
 #
 # Требует, чтобы до него отработал 32-ci.yaml: он кладёт на ноду ключ реестра,
 # ci-kubeconfig, ключи terraform, ci.tfvars и ставит сам terraform.
@@ -19,7 +18,10 @@
 
   vars:
     ci_domain: "debugmonkey.ru"
-    jenkins_domain: "jenkins.{{ ci_domain }}"
+    # Jenkins занимает тот же хост, что был у TeamCity: так ссылки в материалах
+    # и roadmap не меняются. Отдельный jenkins.<домен> был нужен только на время
+    # миграции, когда обе системы работали одновременно.
+    jenkins_domain: "ci.{{ ci_domain }}"
     ci_namespace: "ci"
     jenkins_port: 8080
     jenkins_home: "/home/ubuntu/jenkins"
@@ -221,12 +223,15 @@
       delay: 10
       changed_when: false
 
-    # Ошибки JCasC Jenkins печатает в лог при старте. grep возвращает 1, когда
-    # совпадений нет, — для нас это как раз хороший исход, поэтому failed_when
-    # снят. set -o pipefail здесь не поставить: shell-модуль исполняет dash.
+    # Ошибки JCasC Jenkins печатает в лог при старте. Смотрим только текущий
+    # запуск контейнера: лог переживает перезапуски, и без --since сюда попадают
+    # стек-трейсы прошлых падений. grep возвращает 1, когда совпадений нет, —
+    # для нас это хороший исход, поэтому failed_when снят. set -o pipefail
+    # здесь не поставить: shell-модуль исполняет dash.
     - name: "34-19 Check Jenkins log for JCasC errors"
       ansible.builtin.shell: |
-        docker logs jenkins 2>&1 | grep -iE "casc|configuration as code" | tail -10
+        docker logs --since "$(docker inspect -f '{{ '{{' }}.State.StartedAt{{ '}}' }}' jenkins)" jenkins 2>&1 \
+          | grep -iE "casc|configuration as code" | tail -10
       register: jenkins_casc_log
       changed_when: false
       failed_when: false

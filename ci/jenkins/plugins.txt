@@ -7,3 +7,6 @@ ws-cleanup
 pipeline-stage-view
 # timestamps() в Jenkinsfile без него не разбирается: опция требует плагин.
 timestamper
+# Без него не собираются теги: сканер находит их, но пишет «No automatic build
+# triggered» — стратегию сборки тегов даёт именно этот плагин.
+basic-branch-build-strategies
