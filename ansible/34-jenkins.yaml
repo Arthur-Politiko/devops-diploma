@@ -1,0 +1,238 @@
+---
+# Jenkins — CI/CD сервер на admin-ноде. Ставится рядом с TeamCity: свой порт
+# и свой хост, конфигурацию TeamCity не трогает. Смысл затеи в том, что
+# настраивать в интерфейсе не нужно ничего: установка описана здесь,
+# пользователь, права и job'ы — в k8s/ci/jenkins-casc.yaml.j2, логика сборок —
+# в Jenkinsfile репозитория.
+#
+# Требует, чтобы до него отработал 32-ci.yaml: он кладёт на ноду ключ реестра,
+# ci-kubeconfig, ключи terraform, ci.tfvars и ставит сам terraform.
+#
+# Монтирования меняются редко, а контейнер создаётся только если его нет,
+# поэтому при их изменении: -e jenkins_recreate=true
+# Пересобрать образ (например, после правки plugins.txt): -e jenkins_rebuild_image=true
+
+- name: "[34] Deploy Jenkins on admin node"
+  hosts: admin
+  become: false
+  gather_facts: true
+
+  vars:
+    ci_domain: "debugmonkey.ru"
+    jenkins_domain: "jenkins.{{ ci_domain }}"
+    ci_namespace: "ci"
+    jenkins_port: 8080
+    jenkins_home: "/home/ubuntu/jenkins"
+    jenkins_image: "diploma/jenkins:1"
+    jenkins_build_dir: "/home/ubuntu/jenkins-build"
+    jenkins_casc_remote: "/home/ubuntu/jenkins-casc.yaml"
+    jenkins_admin_user: "admin"
+    jenkins_admin_password_file: "{{ playbook_dir }}/../vault/jenkins_admin_password"
+    kubeconfig_path: "/home/ubuntu/.kube/config"
+    rendered_dir: "/home/ubuntu/rendered"
+    app_repo: "https://github.com/Arthur-Politiko/web-app.git"
+    infra_repo: "https://github.com/Arthur-Politiko/devops-diploma.git"
+    jenkins_recreate: false
+    jenkins_rebuild_image: false
+
+    # Файлы, которые готовит 32-ci.yaml. Пути те же, что монтировались
+    # в агент TeamCity, — ключи и kubeconfig переиспользуются как есть.
+    registry_key_remote: "/home/ubuntu/ci-registry-key.json"
+    ci_kubeconfig: "/home/ubuntu/ci-kubeconfig"
+    tf_sa_key_remote: "/home/ubuntu/tf-sa-key.json"
+    s3_key_remote: "/home/ubuntu/s3_key"
+    tf_tfvars_remote: "/home/ubuntu/ci.tfvars"
+    terraformrc_remote: "/home/ubuntu/terraformrc"
+    ssh_pub_key_remote: "/home/ubuntu/id_ed25519.pub"
+    admin_internal_ip: "{{ ansible_host }}"
+
+  tasks:
+    - name: "34-1 Require Jenkins admin password"
+      ansible.builtin.assert:
+        that: lookup('file', jenkins_admin_password_file, errors='ignore') | length > 0
+        quiet: true
+        fail_msg: >-
+          Нет файла {{ jenkins_admin_password_file }}. Создай его:
+          openssl rand -base64 18 > vault/jenkins_admin_password
+
+    - name: "34-2 Check files prepared by 32-ci.yaml"
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ registry_key_remote }}"
+        - "{{ ci_kubeconfig }}"
+        - "{{ tf_sa_key_remote }}"
+        - "{{ s3_key_remote }}"
+        - "{{ tf_tfvars_remote }}"
+        - "{{ terraformrc_remote }}"
+      register: ci_files
+
+    - name: "34-3 Require them all"
+      ansible.builtin.assert:
+        that: ci_files.results | rejectattr('stat.exists') | list | length == 0
+        quiet: true
+        fail_msg: >-
+          Не хватает файлов, которые готовит 32-ci.yaml. Сначала прогони его.
+          Отсутствуют: {{ ci_files.results | rejectattr('stat.exists') | map(attribute='item') | list | join(', ') }}
+
+    - name: "34-4 Create directories"
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ jenkins_home }}"
+        - "{{ jenkins_build_dir }}"
+        - "{{ rendered_dir }}"
+
+    - name: "34-5 Copy image build context"
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../ci/jenkins/{{ item }}"
+        dest: "{{ jenkins_build_dir }}/{{ item }}"
+        mode: "0644"
+      loop:
+        - Dockerfile
+        - plugins.txt
+
+    - name: "34-6 Check Jenkins image"
+      ansible.builtin.command: docker image inspect {{ jenkins_image }}
+      register: jenkins_image_check
+      changed_when: false
+      failed_when: false
+      become: true
+
+    - name: "34-7 Build Jenkins image"
+      ansible.builtin.command:
+        cmd: docker build -t {{ jenkins_image }} {{ jenkins_build_dir }}
+      when: jenkins_image_check.rc != 0 or jenkins_rebuild_image | bool
+      become: true
+
+    # Пароль подставляется из vault/ в момент рендера — в git он не попадает.
+    - name: "34-8 Render JCasC configuration"
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../k8s/ci/jenkins-casc.yaml.j2"
+        dest: "{{ jenkins_casc_remote }}"
+        mode: "0600"
+      vars:
+        jenkins_admin_password: "{{ lookup('file', jenkins_admin_password_file) }}"
+
+    # Пути к kubectl, terraform, docker и его плагинам узнаём на месте:
+    # в контейнер они монтируются с хоста, чтобы версии не разъезжались.
+    - name: "34-9 Find kubectl"
+      ansible.builtin.shell: command -v kubectl
+      register: kubectl_bin
+      changed_when: false
+      failed_when: kubectl_bin.rc != 0
+
+    - name: "34-10 Find terraform"
+      ansible.builtin.shell: command -v terraform
+      register: terraform_bin
+      changed_when: false
+      failed_when: terraform_bin.rc != 0
+
+    - name: "34-11 Find docker CLI"
+      ansible.builtin.shell: command -v docker
+      register: docker_bin
+      changed_when: false
+      failed_when: docker_bin.rc != 0
+
+    # buildx — плагин CLI, отдельный бинарь в каталоге плагинов. Без него
+    # не собрать образ так, как того требует cr.yandex.
+    - name: "34-12 Find docker CLI plugins directory"
+      ansible.builtin.shell: |
+        for d in /usr/libexec/docker/cli-plugins /usr/local/lib/docker/cli-plugins /usr/lib/docker/cli-plugins; do
+          if [ -d "$d" ]; then echo "$d"; exit 0; fi
+        done
+        exit 1
+      register: docker_plugins_dir
+      changed_when: false
+      failed_when: docker_plugins_dir.rc != 0
+
+    - name: "34-13 Recreate the Jenkins container when requested"
+      ansible.builtin.command: docker rm -f jenkins
+      when: jenkins_recreate | bool
+      changed_when: true
+      become: true
+
+    # runSetupWizard=false вместе с JCasC убирает мастер первоначальной
+    # настройки: поднимается уже сконфигурированный сервер.
+    - name: "34-14 Run Jenkins container"
+      ansible.builtin.shell: |
+        if docker ps -a --format '{{ '{{' }}.Names{{ '}}' }}' | grep -qx jenkins; then
+          echo "exists"
+        else
+          docker run -d --name jenkins --restart always \
+            -p {{ jenkins_port }}:8080 \
+            -e JAVA_OPTS="-Djenkins.install.runSetupWizard=false -Xmx1g" \
+            -e CASC_JENKINS_CONFIG=/casc/jenkins.yaml \
+            -e KUBECONFIG=/keys/kubeconfig \
+            -e TF_CLI_CONFIG_FILE=/keys/terraformrc \
+            -v {{ jenkins_home }}:/var/jenkins_home \
+            -v {{ jenkins_casc_remote }}:/casc/jenkins.yaml:ro \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            --group-add $(stat -c '%g' /var/run/docker.sock) \
+            -v {{ docker_bin.stdout }}:/usr/local/bin/docker:ro \
+            -v {{ docker_plugins_dir.stdout }}:{{ docker_plugins_dir.stdout }}:ro \
+            -v {{ kubectl_bin.stdout }}:/usr/local/bin/kubectl:ro \
+            -v {{ terraform_bin.stdout }}:/usr/local/bin/terraform:ro \
+            -v {{ registry_key_remote }}:/keys/key.json:ro \
+            -v {{ ci_kubeconfig }}:/keys/kubeconfig:ro \
+            -v {{ tf_sa_key_remote }}:/keys/tf-sa-key.json:ro \
+            -v {{ s3_key_remote }}:/keys/s3_key:ro \
+            -v {{ tf_tfvars_remote }}:/keys/ci.tfvars:ro \
+            -v {{ terraformrc_remote }}:/keys/terraformrc:ro \
+            -v {{ ssh_pub_key_remote }}:/keys/id_ed25519.pub:ro \
+            {{ jenkins_image }} >/dev/null && echo "created"
+        fi
+      register: jenkins_run
+      changed_when: "'created' in jenkins_run.stdout"
+      become: true
+
+    - name: "34-15 Create namespace for CI objects"
+      ansible.builtin.command: kubectl create namespace {{ ci_namespace }}
+      register: ns_create
+      changed_when: "'created' in ns_create.stdout"
+      failed_when: ns_create.rc != 0 and 'AlreadyExists' not in ns_create.stderr
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    - name: "34-16 Render external service manifests"
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../k8s/ci/jenkins-external.yaml.j2"
+        dest: "{{ rendered_dir }}/jenkins-external.yaml"
+        mode: "0644"
+
+    - name: "34-17 Apply external service manifests"
+      ansible.builtin.command: kubectl apply -f {{ rendered_dir }}/jenkins-external.yaml
+      register: jenkins_external
+      changed_when: "'created' in jenkins_external.stdout or 'configured' in jenkins_external.stdout"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    # Jenkins отвечает на /login и во время инициализации; JCasC применяется
+    # на старте, поэтому после этой проверки job'ы уже должны существовать.
+    - name: "34-18 Wait for Jenkins to answer"
+      ansible.builtin.uri:
+        url: "http://localhost:{{ jenkins_port }}/login"
+        status_code: 200
+      register: jenkins_health
+      until: jenkins_health.status == 200
+      retries: 30
+      delay: 10
+      changed_when: false
+
+    # Ошибки JCasC Jenkins печатает в лог при старте; проверяем, что их нет.
+    - name: "34-19 Check Jenkins log for JCasC errors"
+      ansible.builtin.shell: |
+        set -o pipefail
+        docker logs jenkins 2>&1 | grep -iE "casc|configuration as code" | tail -10 || true
+      register: jenkins_casc_log
+      changed_when: false
+      become: true
+
+  post_tasks:
+    - name: Display Jenkins state
+      ansible.builtin.debug:
+        msg:
+          - "Jenkins: http://{{ jenkins_domain }}/ (пользователь {{ jenkins_admin_user }}, пароль в vault/jenkins_admin_password)"
+          - "{{ jenkins_casc_log.stdout_lines | default([]) | join(' ') }}"

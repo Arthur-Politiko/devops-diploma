@@ -1,0 +1,98 @@
+# Конфигурация Jenkins как код (JCasC).
+#
+# Рендерится плейбуком ansible/34-jenkins.yaml и монтируется в контейнер
+# read-only. Здесь описано всё, что у TeamCity создавалось руками через
+# REST API: пользователь, права и сами job'ы. Логика сборок сюда не попадает —
+# она лежит в Jenkinsfile соответствующего репозитория.
+#
+# Секретов, кроме пароля администратора, тут нет: ключ реестра, kubeconfig
+# и ключи terraform лежат на ноде и монтируются в контейнер файлами по тем же
+# путям, которые ожидает ci.tfvars.
+jenkins:
+  systemMessage: "devops-diploma: CI на Jenkins. Конфигурация — ansible/34-jenkins.yaml и k8s/ci/jenkins-casc.yaml.j2"
+  numExecutors: 2
+  mode: NORMAL
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "{{ jenkins_admin_user }}"
+          password: "{{ jenkins_admin_password }}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+  nodes: []
+
+unclassified:
+  location:
+    url: "http://{{ jenkins_domain }}/"
+    adminAddress: "devops-diploma-ci@debugmonkey.ru"
+
+jobs:
+  # Приложение. Multibranch видит и ветку main, и теги — то, что в TeamCity
+  # требовало двух сборок и трёх попыток определить версию в скрипте.
+  # Версия определяется в Jenkinsfile: TAG_NAME заполнен — значит релиз.
+  - script: |
+      multibranchPipelineJob('web-app') {
+        displayName('web-app')
+        description('Сборка образа приложения; на теге — деплой в кластер')
+        branchSources {
+          branchSource {
+            source {
+              git {
+                id('web-app-github')
+                remote('{{ app_repo }}')
+                // traits живут именно здесь: под branchSources.git этого
+                // метода нет, и JCasC падает с MissingMethodException.
+                traits {
+                  gitBranchDiscovery()
+                  gitTagDiscovery()
+                }
+              }
+            }
+          }
+        }
+        factory {
+          workflowBranchProjectFactory {
+            scriptPath('Jenkinsfile')
+          }
+        }
+        triggers {
+          periodicFolderTrigger {
+            interval('5m')
+          }
+        }
+        orphanedItemStrategy {
+          discardOldItems {
+            numToKeep(20)
+          }
+        }
+      }
+
+  # Инфраструктура. План на коммит в main, применение — параметром сборки:
+  # это и есть «controlled apply после review» из задания, кнопкой в UI,
+  # а не флагом при создании конфигурации.
+  - script: |
+      pipelineJob('terraform') {
+        displayName('terraform (devops-diploma)')
+        description('fmt/validate/plan; apply — параметром APPLY')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('{{ infra_repo }}')
+                }
+                branch('*/main')
+              }
+            }
+            scriptPath('ci/Jenkinsfile')
+          }
+        }
+        parameters {
+          booleanParam('APPLY', false, 'Применить план после успешного plan')
+        }
+        triggers {
+          scm('H/5 * * * *')
+        }
+      }

@@ -1,0 +1,68 @@
+// Пайплайн инфраструктуры: план на коммит в main, применение — параметром сборки.
+//
+// Логика живёт здесь, а не в конфигурации Jenkins: правка пайплайна — это коммит
+// в репозиторий. В jenkins-casc.yaml.j2 остаётся только описание самой job'ы.
+//
+// Ключи и файлы переменных смонтированы в контейнер плейбуком 34-jenkins.yaml
+// по путям, которые ожидает ci.tfvars (/keys/tf-sa-key.json и прочие).
+pipeline {
+  agent any
+
+  parameters {
+    booleanParam(name: 'APPLY', defaultValue: false,
+                 description: 'Применить план после успешного plan')
+  }
+
+  options {
+    timestamps()
+    // Два одновременных apply недопустимы, а блокировки состояния у S3-бэкенда
+    // в Yandex Object Storage нет.
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+
+  stages {
+    stage('Terraform plan') {
+      steps {
+        dir('tf') {
+          sh '''
+            set -e
+            # Ключи бэкенда: в блоке backend "s3" их нет, terraform берёт AWS_*
+            # из окружения. Файл формата "key_id <значение>" / "secret <значение>".
+            export AWS_ACCESS_KEY_ID=$(awk '$1=="key_id"{print $2}' /keys/s3_key)
+            export AWS_SECRET_ACCESS_KEY=$(awk '$1=="secret"{print $2}' /keys/s3_key)
+
+            terraform fmt -check -recursive
+            terraform init -no-color
+            terraform validate -no-color
+            terraform plan -var-file=/keys/ci.tfvars -no-color -out=tfplan
+          '''
+        }
+      }
+    }
+
+    stage('Terraform apply') {
+      when { expression { params.APPLY } }
+      steps {
+        dir('tf') {
+          sh '''
+            set -e
+            export AWS_ACCESS_KEY_ID=$(awk '$1=="key_id"{print $2}' /keys/s3_key)
+            export AWS_SECRET_ACCESS_KEY=$(awk '$1=="secret"{print $2}' /keys/s3_key)
+
+            terraform apply -auto-approve -no-color tfplan
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    // terraform пишет их ресурсом local_file при apply — так же, как это
+    // делает оператор у себя локально, — поэтому забираем их артефактами.
+    always {
+      archiveArtifacts artifacts: 'ansible/ansible.cfg,ansible/inventory.ini',
+                       allowEmptyArchive: true
+    }
+  }
+}

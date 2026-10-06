@@ -24,6 +24,7 @@
 # 12. 31-ingress.yaml - ingress-контроллер и публикация Grafana на 80 порту
 # 13. 32-ci.yaml - TeamCity: сервер, агент сборки и веб-интерфейс на 80 порту
 # 14. 33-app-prepare.yaml - namespace приложения и права пайплайна на деплой
+# 15. 34-jenkins.yaml - Jenkins на admin-ноде (миграция с TeamCity, раздел 9)
 
 - name: "02 Configure NAT gateway"
   import_playbook: 02-nat-gateway.yaml
@@ -66,3 +67,6 @@
 
 - name: "33 Prepare app namespace"
   import_playbook: 33-app-prepare.yaml
+
+- name: "34 Deploy Jenkins"
+  import_playbook: 34-jenkins.yaml

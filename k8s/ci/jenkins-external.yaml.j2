@@ -1,0 +1,49 @@
+# Публикация Jenkins, который живёт на admin-ноде, через ingress кластера.
+#
+# Схема та же, что была у TeamCity: Service без селектора + Endpoints с
+# адресом ноды. Admin в приватной подсети, поэтому напрямую снаружи недоступен,
+# а ingress-nginx проксирует трафик на него — ссылка остаётся без порта.
+# Отдельный хост нужен на время миграции: ci.<домен> продолжает смотреть
+# на TeamCity, пока Jenkins не будет проверен.
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins-external
+  namespace: {{ ci_namespace }}
+spec:
+  # Селектора нет намеренно: эндпоинты задаются вручную ниже.
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: jenkins-external
+  namespace: {{ ci_namespace }}
+subsets:
+  - addresses:
+      - ip: {{ admin_internal_ip }}
+    ports:
+      - name: http
+        port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jenkins
+  namespace: {{ ci_namespace }}
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {{ jenkins_domain }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jenkins-external
+                port:
+                  number: 8080
