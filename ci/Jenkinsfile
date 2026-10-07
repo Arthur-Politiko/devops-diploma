@@ -24,8 +24,12 @@ pipeline {
             set -e
             # Ключи бэкенда: в блоке backend "s3" их нет, terraform берёт AWS_*
             # из окружения. Файл формата "key_id <значение>" / "secret <значение>".
+            # set +x на время экспорта: sh запускается с трассировкой, и без этого
+            # значения ключей печатаются в лог сборки.
+            set +x
             export AWS_ACCESS_KEY_ID=$(awk '$1=="key_id"{print $2}' /keys/s3_key)
             export AWS_SECRET_ACCESS_KEY=$(awk '$1=="secret"{print $2}' /keys/s3_key)
+            set -x
 
             terraform fmt -check -recursive
             terraform init -no-color
@@ -42,8 +46,10 @@ pipeline {
         dir('tf') {
           sh '''
             set -e
+            set +x
             export AWS_ACCESS_KEY_ID=$(awk '$1=="key_id"{print $2}' /keys/s3_key)
             export AWS_SECRET_ACCESS_KEY=$(awk '$1=="secret"{print $2}' /keys/s3_key)
+            set -x
 
             terraform apply -auto-approve -no-color tfplan
           '''
