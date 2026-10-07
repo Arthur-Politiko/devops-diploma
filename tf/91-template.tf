@@ -91,5 +91,9 @@ resource "local_file" "ansible_inventory" {
     worker_ips = local.workers,
     nat_ips    = local.nat,
     admin_ips  = local.admin,
+    # Идентификатор реестра отдаём в inventory, чтобы Ansible и пайплайн брали
+    # его из состояния, а не из литерала в репозитории: реестр создаёт terraform,
+    # и при его пересоздании ID меняется (эта грабля уже срабатывала).
+    registry_id = yandex_container_registry.registry.id,
   })
 }

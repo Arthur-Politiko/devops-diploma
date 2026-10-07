@@ -369,7 +369,7 @@ variable "vm_boot_disks" {
       disk_name = "disk-nat"
       disk_type = "network-hdd"
       disk_size = 40
-      image_id  = "fd80mrhj8fl2oe87o4e1"
+      # image_id не задан намеренно: роль берёт общий var.default_image 
     },
     "master" = {
       disk_name = "disk-master"

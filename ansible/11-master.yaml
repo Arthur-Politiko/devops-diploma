@@ -5,7 +5,7 @@
   become: true
   gather_facts: true
 
-  pre_tasks:
+  tasks:
     # Копирование SSH-ключа на мастер-ноду для доступа к worker-нодам (ProxyJump)
     - name: Ensure .ssh directory exists for ubuntu user
       ansible.builtin.file:
@@ -31,7 +31,6 @@
         append: yes
       failed_when: false
 
-  tasks:
     # Создание директории для kubeconfig
     - name: Create .kube directory for ubuntu user
       file:

@@ -8,15 +8,14 @@
   vars:
     cri_socket: "unix:///var/run/containerd/containerd.sock"
 
-  pre_tasks:
-    # Первый мастер уже инициализирован kubeadm init, ему присоединяться не нужно
-    # ansible.builtin.meta: end_host - завершает выполнение текущего сценария дя хоста
+  tasks:
+    # Первый мастер уже инициализирован kubeadm init, ему присоединяться некуда
+    # ansible.builtin.meta: end_host - завершает выполнение текущего сценария для хоста
     - name: Skip control-plane join for the primary master
       meta: end_host
       when: inventory_hostname == master_name
 
-    # Проверяем локально: kubelet.conf появляется только после успешного join,
-    # поэтому обращаться к API-серверу здесь не нужно
+    # Если уже в банде, то не присоединяемся повторно
     - name: Check if node already joined
       ansible.builtin.stat:
         path: /etc/kubernetes/kubelet.conf
@@ -26,7 +25,6 @@
       meta: end_host
       when: kubelet_conf.stat.exists
 
-  tasks:
     # certificate-key живет ~2 часа, поэтому генерируется заново при каждом запуске
     - name: Generate control-plane certificate key
       ansible.builtin.command: kubeadm init phase upload-certs --upload-certs
@@ -65,8 +63,6 @@
         --certificate-key {{ certificate_key }}
         --cri-socket {{ cri_socket }}
 
-  post_tasks:
     - name: Show join status
       ansible.builtin.debug:
         msg: "✅ Master node {{ inventory_hostname }} joined the cluster!"
-

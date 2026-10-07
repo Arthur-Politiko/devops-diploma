@@ -21,11 +21,12 @@
   hosts: admin
   become: false
   gather_facts: false
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
 
   vars:
     helm_version: "v3.22.0"
     chart_version: "91.6.0"
-    kubeconfig_path: "/home/ubuntu/.kube/config"
     # Копия values.yaml на admin-ноде: модуль helm читает файл на целевой машине,
     # а не на control node.
     values_file: "/home/ubuntu/kube-prometheus-stack-values.yaml"
@@ -95,8 +96,6 @@
       register: namespace_create
       changed_when: "'created' in namespace_create.stdout"
       failed_when: namespace_create.rc != 0 and 'AlreadyExists' not in namespace_create.stderr
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
 
     # apply поверх create --dry-run: идемпотентно, без сравнения содержимого.
     - name: "30-8 Create Grafana admin secret"
@@ -106,8 +105,6 @@
           --from-literal=admin-user=admin
           --from-literal=admin-password={{ grafana_admin_password | quote }}
           --dry-run=client -o yaml | kubectl apply -f -
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
       no_log: true
       changed_when: false
 
@@ -129,17 +126,12 @@
           - "{{ values_file }}"
         wait: true
         wait_timeout: 15m
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
 
     - name: "30-11 Collect monitoring pods"
       ansible.builtin.command: kubectl -n {{ monitoring_namespace }} get pods -o wide
       register: monitoring_pods
       changed_when: false
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
 
-  post_tasks:
     - name: Display monitoring pods
       ansible.builtin.debug:
         msg: "{{ monitoring_pods.stdout_lines | default(['Waiting for pods...']) }}"

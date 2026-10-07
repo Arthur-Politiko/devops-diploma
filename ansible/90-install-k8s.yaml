@@ -5,12 +5,9 @@
 #   1x - подготовка узлов Kubernetes
 #   2x - сборка кластера
 #   3x - дополнения в уже собранном кластере
-# Номер файла совпадает с шагом выполнения.
 #
 # Порядок выполнения:
-# 1.  02-nat-gateway.yaml - NAT и masquerade: без него у приватных нод нет
-#     интернета, и все шаги, которые что-то скачивают (apt, pkgs.k8s.io,
-#     download.docker.com, get.helm.sh, git clone), падают
+# 1.  02-nat-gateway.yaml
 # 2.  01-bootstrap.yaml - установка Python на узлы
 # 3.  03-admin-prepare.yaml - apt-репозиторий Kubernetes и kubectl на admin
 # 4.  10-k8s-common.yaml - подготовка узлов и установка Kubernetes

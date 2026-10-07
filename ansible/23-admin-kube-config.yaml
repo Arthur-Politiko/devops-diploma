@@ -14,9 +14,10 @@
 - name: "[23] Install kubeconfig on admin"
   hosts: admin
   become: true
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
 
   vars:
-    kubeconfig_path: "/home/ubuntu/.kube/config"
     kubeconfig_owner: "ubuntu"
 
   tasks:
@@ -53,12 +54,9 @@
     - name: "23-6 Verify cluster access"
       ansible.builtin.command: kubectl get nodes -o wide
       become: false
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
       changed_when: false
       register: admin_kubectl_nodes
 
-  post_tasks:
     - name: Display cluster nodes
       ansible.builtin.debug:
         msg: "{{ admin_kubectl_nodes.stdout_lines }}"

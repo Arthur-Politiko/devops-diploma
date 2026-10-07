@@ -1,0 +1,18 @@
+---
+# Общие переменные стенда
+
+# Путь к kubeconfig на admin ноде
+kubeconfig_path: "/home/ubuntu/.kube/config"
+
+# Каталог на admin ноде, куда плейбуки складывают отрендеренные манифесты
+# перед kubectl apply
+rendered_dir: "/home/ubuntu/rendered"
+
+# Домен стенда
+ci_domain: "debugmonkey.ru"
+
+# Namespace и имена объектов кластера
+app_namespace: "web-app"
+app_deployment: "web-app"
+ci_namespace: "ci"
+

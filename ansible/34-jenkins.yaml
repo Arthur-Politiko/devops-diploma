@@ -1,9 +1,5 @@
 ---
-# Jenkins — CI/CD сервер на admin-ноде. Смысл затеи в том, что настраивать
-# в интерфейсе не нужно ничего: установка описана здесь, пользователь, права
-# и job'ы — в ci/jenkins/jenkins-casc.yaml.j2, логика сборок — в Jenkinsfile
-# репозитория. Публикуется на ci.<домен> — тот же адрес, что был у TeamCity.
-#
+# Jenkins — CI/CD сервер на admin-ноде. 
 # Требует, чтобы до него отработал 32-ci.yaml: он кладёт на ноду ключ реестра,
 # ci-kubeconfig, ключи terraform, ci.tfvars и ставит сам terraform.
 #
@@ -15,14 +11,12 @@
   hosts: admin
   become: false
   gather_facts: true
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
 
   vars:
-    ci_domain: "debugmonkey.ru"
-    # Jenkins занимает тот же хост, что был у TeamCity: так ссылки в материалах
-    # и roadmap не меняются. Отдельный jenkins.<домен> был нужен только на время
-    # миграции, когда обе системы работали одновременно.
+    # Домен ci_domain и namespace'ы приходят из group_vars/all.yml.
     jenkins_domain: "ci.{{ ci_domain }}"
-    ci_namespace: "ci"
     jenkins_port: 8080
     jenkins_home: "/home/ubuntu/jenkins"
     jenkins_image: "diploma/jenkins:1"
@@ -30,8 +24,6 @@
     jenkins_casc_remote: "/home/ubuntu/jenkins-casc.yaml"
     jenkins_admin_user: "admin"
     jenkins_admin_password_file: "{{ playbook_dir }}/../vault/jenkins_admin_password"
-    kubeconfig_path: "/home/ubuntu/.kube/config"
-    rendered_dir: "/home/ubuntu/rendered"
     app_repo: "https://github.com/Arthur-Politiko/web-app.git"
     infra_repo: "https://github.com/Arthur-Politiko/devops-diploma.git"
     jenkins_recreate: false
@@ -76,6 +68,15 @@
         fail_msg: >-
           Не хватает файлов, которые готовит 32-ci.yaml. Сначала прогони его.
           Отсутствуют: {{ ci_files.results | rejectattr('stat.exists') | map(attribute='item') | list | join(', ') }}
+
+    # Реестр создаёт terraform, и его идентификатор доезжает сюда через inventory
+    - name: "34-3a Require registry id from terraform"
+      ansible.builtin.assert:
+        that: registry_id is defined and registry_id | length > 0
+        quiet: true
+        fail_msg: >-
+          В inventory нет registry_id. Прогони terraform apply — он добавляет
+          идентификатор реестра в ansible/inventory.ini из состояния.
 
     - name: "34-4 Create directories"
       ansible.builtin.file:
@@ -169,6 +170,10 @@
             -e CASC_JENKINS_CONFIG=/casc/jenkins.yaml \
             -e KUBECONFIG=/keys/kubeconfig \
             -e TF_CLI_CONFIG_FILE=/keys/terraformrc \
+            -e REGISTRY=cr.yandex/{{ registry_id }}/hub \
+            -e APP_NAMESPACE={{ app_namespace }} \
+            -e APP_DEPLOYMENT={{ app_deployment }} \
+            -e REGISTRY_KEY_FILE=/keys/key.json \
             -v {{ jenkins_home }}:/var/jenkins_home \
             -v {{ jenkins_casc_remote }}:/casc/jenkins.yaml:ro \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -195,8 +200,6 @@
       register: ns_create
       changed_when: "'created' in ns_create.stdout"
       failed_when: ns_create.rc != 0 and 'AlreadyExists' not in ns_create.stderr
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
 
     - name: "34-16 Render external service manifests"
       ansible.builtin.template:
@@ -208,8 +211,6 @@
       ansible.builtin.command: kubectl apply -f {{ rendered_dir }}/jenkins-external.yaml
       register: jenkins_external
       changed_when: "'created' in jenkins_external.stdout or 'configured' in jenkins_external.stdout"
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
 
     # Jenkins отвечает на /login и во время инициализации; JCasC применяется
     # на старте, поэтому после этой проверки job'ы уже должны существовать.
@@ -224,10 +225,7 @@
       changed_when: false
 
     # Ошибки JCasC Jenkins печатает в лог при старте. Смотрим только текущий
-    # запуск контейнера: лог переживает перезапуски, и без --since сюда попадают
-    # стек-трейсы прошлых падений. grep возвращает 1, когда совпадений нет, —
-    # для нас это хороший исход, поэтому failed_when снят. set -o pipefail
-    # здесь не поставить: shell-модуль исполняет dash.
+    # запуск контейнера: лог переживает перезапуски
     - name: "34-19 Check Jenkins log for JCasC errors"
       ansible.builtin.shell: |
         docker logs --since "$(docker inspect -f '{{ '{{' }}.State.StartedAt{{ '}}' }}' jenkins)" jenkins 2>&1 \
@@ -237,7 +235,6 @@
       failed_when: false
       become: true
 
-  post_tasks:
     - name: Display Jenkins state
       ansible.builtin.debug:
         msg:

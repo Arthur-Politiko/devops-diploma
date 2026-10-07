@@ -1,6 +1,5 @@
 ---
 # Общая подготовка admin-ноды: apt-репозиторий Kubernetes и kubectl.
-# От кластера не зависит — нужен только доступ в интернет через NAT-ноду.
 - name: "[03] Prepare admin node"
   hosts: admin
   become: true
@@ -9,8 +8,9 @@
     kubernetes_version: "1.35"
 
   tasks:
-    # Зависимости для подключения apt-репозитория Kubernetes.
-    # Обязательно до скачивания GPG-ключа: нужны curl и gpg.
+    - name: Wait for apt to be free
+      ansible.builtin.include_tasks: tasks/wait-for-apt.yml
+
     - name: "03-1 Install apt prerequisites"
       ansible.builtin.apt:
         name:

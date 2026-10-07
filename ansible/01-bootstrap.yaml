@@ -5,6 +5,9 @@
   gather_facts: false
 
   tasks:
+    - name: Wait for apt to be free
+      ansible.builtin.include_tasks: tasks/wait-for-apt.yml
+
     - name: Install Python dependency without Ansible Python
       ansible.builtin.raw: |
         export DEBIAN_FRONTEND=noninteractive
@@ -16,6 +19,17 @@
   gather_facts: true
 
   tasks:
+    # Автообновления на узле Kubernetes опасны: могут перезапустить containerd
+    # или kubelet под работающим кластером.
+    - name: Disable periodic APT upgrades
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: false
+        state: stopped
+      loop:
+        - apt-daily.timer
+        - apt-daily-upgrade.timer
+
     - name: Ensure Python dependency is present
       ansible.builtin.apt:
         name:

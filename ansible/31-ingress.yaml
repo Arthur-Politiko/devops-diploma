@@ -11,28 +11,27 @@
 # за счёт правила MASQUERADE из 02-nat-gateway.yaml: пакет уходит к воркеру через
 # тот же интерфейс, и источник подменяется на адрес NAT-ноды.
 #
-# Имена сервисов собираются из домена ingress_domain. В зоне debugmonkey.ru заведена
-# wildcard-запись *.debugmonkey.ru, которая указывает на статический адрес NAT-ноды
-# (создаётся Terraform: ресурс yandex_vpc_address в tf/41-static-ip.tf, адрес смотри
-# в `terraform output nat-public-ip`). Поэтому адрес ссылок не зависит от пересборки
-# кластера — в отличие от динамического IP, который выдаётся заново.
+# Имена сервисов собираются из домена ci_domain (group_vars/all.yml). В его зоне
+# заведена wildcard-запись *.debugmonkey.ru, которая указывает на статический адрес
+# NAT-ноды (создаётся Terraform: ресурс yandex_vpc_address в tf/41-static-ip.tf,
+# адрес смотри в `terraform output nat-public-ip`). Поэтому адрес ссылок не зависит
+# от пересборки кластера — в отличие от динамического IP, который выдаётся заново.
 #
-# Домен можно переопределить при запуске: -e ingress_domain=example.com
+# Домен можно переопределить при запуске: -e ci_domain=example.com
 
 - name: "[31] Deploy ingress controller"
   hosts: admin
   become: false
   gather_facts: false
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
 
   vars:
     ingress_nginx_version: "4.15.1"
     ingress_namespace: ingress-nginx
-    ingress_domain: "debugmonkey.ru"
     # NodePort'ы фиксируем, чтобы DNAT на NAT-ноде знал точный порт.
     ingress_http_nodeport: 30080
     ingress_https_nodeport: 30443
-    kubeconfig_path: "/home/ubuntu/.kube/config"
-    rendered_dir: "/home/ubuntu/rendered"
     # Значения чарта держим отдельным словарём: так Ansible отдаёт их
     # в модуль как структуру, а не как строку.
     ingress_values:
@@ -51,7 +50,7 @@
   tasks:
     - name: "31-1 Set ingress host"
       ansible.builtin.set_fact:
-        ingress_host: "grafana.{{ ingress_domain }}"
+        ingress_host: "grafana.{{ ci_domain }}"
 
     - name: "31-2 Add ingress-nginx chart repository"
       kubernetes.core.helm_repository:
@@ -70,8 +69,6 @@
         values: "{{ ingress_values }}"
         wait: true
         wait_timeout: 10m
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
 
     - name: "31-4 Create directory for rendered manifests"
       ansible.builtin.file:
@@ -89,17 +86,12 @@
       ansible.builtin.command: kubectl apply -f {{ rendered_dir }}/grafana-ingress.yaml
       register: ingress_apply
       changed_when: "'created' in ingress_apply.stdout or 'configured' in ingress_apply.stdout"
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
 
     - name: "31-7 Collect ingress state"
       ansible.builtin.command: kubectl get ingress -A
       register: ingress_state
       changed_when: false
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
 
-  post_tasks:
     - name: Display ingresses
       ansible.builtin.debug:
         msg: "{{ ingress_state.stdout_lines | default([]) }}"
@@ -120,29 +112,63 @@
     nat_internal_ip: "{{ hostvars[groups['nat_gateway'][0]]['ansible_host'] }}"
 
   tasks:
-    # Python на NAT-ноде нет, поэтому только raw — как в 02-nat-gateway.yaml.
-    #
-    # Снимаем ВСЕ правила DNAT для 80 порта, не глядя на адрес назначения.
+    # Снимаем правила DNAT прошлых прогонов, не глядя на адрес назначения.
     # Так надо потому, что после пересборки кластера внутренние адреса worker'ов
-    # меняются: правило прошлого прогона указывает на машину, которой больше нет.
-    # iptables берёт первое совпадение, поэтому оставленное старое правило перед
-    # новым означает мёртвый вход — именно это и случилось на первом прогоне
-    # с нуля.
+    # меняются: правило указывает на машину, которой больше нет, а iptables
+    # берёт первое совпадение — то есть оставленное старое правило перед новым
+    # означает мёртвый вход. Именно это случилось на прогоне с нуля: кластер
+    # здоров, а снаружи не отвечает ничего.
     #
     # Удаляем по номеру правила, а не по спецификации: `-D` требует точного
     # совпадения канонизированного правила, и попытка удалить «правило с любым
-    # адресом назначения» не находит ничего (проверено — остались дубликаты).
-    # Номера берём с конца, чтобы удаление не сдвигало следующие.
-    # netfilter-persistent save нужен, чтобы правило пережило перезагрузку.
-    - name: "31-8 DNAT port 80 to ingress NodePort"
-      ansible.builtin.raw: >-
-        IFACE=$(ip route show default | awk 'NR==1 {print $5}') &&
-        for n in $(iptables -t nat -L PREROUTING --line-numbers -n | awk '/DNAT/ && /dpt:80/ {print $1}' | sort -rn); do iptables -t nat -D PREROUTING "$n"; done;
-        iptables -t nat -A PREROUTING -i "$IFACE" -d {{ nat_internal_ip }} -p tcp --dport 80 -j DNAT --to-destination {{ dnat_target_ip }}:{{ ingress_http_nodeport }} &&
-        netfilter-persistent save &&
-        echo "rule-ok"
-      register: dnat
-      changed_when: "'rule-ok' in dnat.stdout"
+    # адресом» не находит ничего (проверено — остались дубликаты). Номера
+    # берём с конца, чтобы удаление не сдвигало следующие.
+    - name: "31-8 Check current DNAT rules for port 80"
+      ansible.builtin.shell: |
+        iptables -t nat -S PREROUTING | grep -- '--dport 80 -j DNAT' || true
+      register: dnat_current
+      changed_when: false
+
+    - name: "31-8a Find the default interface"
+      ansible.builtin.command: ip route show default
+      register: nat_default_route
+      changed_when: false
+
+    - name: "31-8b Drop stale DNAT rules"
+      ansible.builtin.shell: |
+        before=$(iptables -t nat -S PREROUTING | grep -c -- '--dport 80 -j DNAT' || true)
+        for n in $(iptables -t nat -L PREROUTING --line-numbers -n \
+                   | awk '/DNAT/ && /dpt:80/ {print $1}' | sort -rn); do
+          iptables -t nat -D PREROUTING "$n"
+        done
+        echo "dropped=$before"
+      register: dnat_dropped
+      changed_when: "'dropped=0' not in dnat_dropped.stdout"
+      when: >-
+        dnat_current.stdout_lines | length != 1
+        or ('--to-destination ' ~ dnat_target_ip ~ ':' ~ ingress_http_nodeport)
+           not in dnat_current.stdout
+
+    # Модуль сам проверяет, есть ли правило, поэтому повторный прогон
+    # ничего не меняет: раньше задача с raw сообщала об изменении всегда.
+    - name: "31-8c Add DNAT rule for port 80"
+      ansible.builtin.iptables:
+        table: nat
+        chain: PREROUTING
+        in_interface: "{{ nat_default_route.stdout_lines[0].split()[4] }}"
+        destination: "{{ nat_internal_ip }}"
+        protocol: tcp
+        destination_port: "80"
+        jump: DNAT
+        to_destination: "{{ dnat_target_ip }}:{{ ingress_http_nodeport }}"
+      register: dnat_rule
+
+    # netfilter-persistent сохраняет правила на диск, чтобы они пережили
+    # перезагрузку ноды.
+    - name: "31-8d Save iptables rules"
+      ansible.builtin.command: netfilter-persistent save
+      when: dnat_rule.changed or (dnat_dropped.changed | default(false))
+      changed_when: false
 
 - name: "[31] Show access URL"
   hosts: admin

@@ -7,7 +7,7 @@
   vars:
     cri_socket: "unix:///var/run/containerd/containerd.sock"
 
-  pre_tasks:
+  tasks:
     # Проверяем локально: kubelet.conf появляется только после успешного join,
     # поэтому обращаться к API-серверу здесь не нужно
     - name: 21-1 Check if node already joined
@@ -22,7 +22,6 @@
       meta: end_host
       when: kubelet_conf.stat.exists
 
-  tasks:
     # Токен создаётся заново перед каждым запуском: он живёт 24 часа,
     # а хранить его в файле на мастере ненадёжно
     - name: 21-3 Create fresh join command on master
@@ -58,7 +57,6 @@
         name: kubelet
         state: restarted
 
-  post_tasks:
     - name: Show join status
       debug:
         msg: "✅ Worker node {{ inventory_hostname }} joined the cluster!"

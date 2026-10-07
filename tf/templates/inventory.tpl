@@ -3,6 +3,7 @@ ansible_user=${user_name}
 ansible_ssh_private_key_file=${private_key_path}
 master_name=${master.name}
 master_ip=${master.ip}
+registry_id=${registry_id}
 
 [masters]
 

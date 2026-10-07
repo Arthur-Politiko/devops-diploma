@@ -1,0 +1,145 @@
+Branch indexing
+ > git rev-parse --resolve-git-dir /var/jenkins_home/caches/git-8a5438776e05ec323e565e1db42dd3a8/.git # timeout=10
+Setting origin to https://github.com/Arthur-Politiko/web-app.git
+ > git config remote.origin.url https://github.com/Arthur-Politiko/web-app.git # timeout=10
+Fetching origin...
+Fetching upstream changes from origin
+ > git --version # timeout=10
+ > git --version # 'git version 2.47.3'
+ > git config --get remote.origin.url # timeout=10
+ > git fetch --tags --force --progress -- origin +refs/heads/*:refs/remotes/origin/* # timeout=10
+ > git rev-parse refs/tags/v1.3.2^{commit} # timeout=10
+Obtained Jenkinsfile from 099f2867bb4ae93146cf608a35e41d7139adc20d
+[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on Jenkins in /var/jenkins_home/workspace/web-app_v1.3.2
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Declarative: Checkout SCM)
+[Pipeline] checkout
+Selected Git installation does not exist. Using Default
+The recommended git tool is: NONE
+No credentials specified
+Cloning the remote Git repository
+Cloning with configured refspecs honoured and with tags
+Cloning repository https://github.com/Arthur-Politiko/web-app.git
+ > git init /var/jenkins_home/workspace/web-app_v1.3.2 # timeout=10
+Fetching upstream changes from https://github.com/Arthur-Politiko/web-app.git
+ > git --version # timeout=10
+ > git --version # 'git version 2.47.3'
+ > git fetch --tags --force --progress -- https://github.com/Arthur-Politiko/web-app.git +refs/heads/*:refs/remotes/origin/* # timeout=10
+ > git config remote.origin.url https://github.com/Arthur-Politiko/web-app.git # timeout=10
+ > git config --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/* # timeout=10
+Avoid second fetch
+Checking out Revision 099f2867bb4ae93146cf608a35e41d7139adc20d (v1.3.2)
+ > git config core.sparsecheckout # timeout=10
+ > git checkout -f 099f2867bb4ae93146cf608a35e41d7139adc20d # timeout=10
+Commit message: "changes: Изменение деплоя и стиля"
+First time build. Skipping changelog.
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] timestamps
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Check environment)
+[Pipeline] sh
+[2026-10-07T20:11:22.922Z] + : cr.yandex/crpj27virc0v36d3u7rq/hub
+[2026-10-07T20:11:22.922Z] + : web-app
+[2026-10-07T20:11:22.922Z] + : web-app
+[2026-10-07T20:11:22.922Z] + : /keys/key.json
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Build and push image)
+[Pipeline] sh
+[2026-10-07T20:11:23.398Z] + set -e
+[2026-10-07T20:11:23.398Z] + [ -n v1.3.2 ]
+[2026-10-07T20:11:23.398Z] + VERSION=v1.3.2
+[2026-10-07T20:11:23.398Z] + echo Собираю cr.yandex/crpj27virc0v36d3u7rq/hub:v1.3.2
+[2026-10-07T20:11:23.398Z] Собираю cr.yandex/crpj27virc0v36d3u7rq/hub:v1.3.2
+[2026-10-07T20:11:23.399Z] + cat /keys/key.json
+[2026-10-07T20:11:23.399Z] + docker login --username json_key --password-stdin cr.yandex
+[2026-10-07T20:11:23.399Z] Login Succeeded
+[2026-10-07T20:11:23.399Z] + docker buildx build --provenance=false --sbom=false --output type=image,oci-mediatypes=false,push=true -t cr.yandex/crpj27virc0v36d3u7rq/hub:v1.3.2 server/
+[2026-10-07T20:11:23.649Z] #0 building with "default" instance using docker driver
+[2026-10-07T20:11:23.649Z] 
+[2026-10-07T20:11:23.649Z] #1 [internal] load build definition from Dockerfile
+[2026-10-07T20:11:23.649Z] #1 transferring dockerfile: 324B done
+[2026-10-07T20:11:23.649Z] #1 DONE 0.0s
+[2026-10-07T20:11:23.649Z] 
+[2026-10-07T20:11:23.649Z] #2 [internal] load metadata for docker.io/library/nginx:latest
+[2026-10-07T20:11:24.200Z] #2 DONE 0.8s
+[2026-10-07T20:11:24.453Z] 
+[2026-10-07T20:11:24.453Z] #3 [internal] load .dockerignore
+[2026-10-07T20:11:24.453Z] #3 transferring context: 2B done
+[2026-10-07T20:11:24.453Z] #3 DONE 0.0s
+[2026-10-07T20:11:24.453Z] 
+[2026-10-07T20:11:24.453Z] #4 [internal] load build context
+[2026-10-07T20:11:24.453Z] #4 transferring context: 436B done
+[2026-10-07T20:11:24.453Z] #4 DONE 0.0s
+[2026-10-07T20:11:24.453Z] 
+[2026-10-07T20:11:24.453Z] #5 [1/4] FROM docker.io/library/nginx:latest@sha256:f9ea18bfa4fad859e1ed38259d711da7ccad2c3516e875cec3351a57c859f571
+[2026-10-07T20:11:24.454Z] #5 resolve docker.io/library/nginx:latest@sha256:f9ea18bfa4fad859e1ed38259d711da7ccad2c3516e875cec3351a57c859f571 0.0s done
+[2026-10-07T20:11:24.454Z] #5 DONE 0.0s
+[2026-10-07T20:11:24.454Z] 
+[2026-10-07T20:11:24.454Z] #6 [2/4] RUN apt-get update && apt-get install -y --no-install-recommends     bash     curl     jq     && rm -rf /var/lib/apt/lists/*
+[2026-10-07T20:11:24.454Z] #6 CACHED
+[2026-10-07T20:11:24.454Z] 
+[2026-10-07T20:11:24.454Z] #7 [3/4] COPY ./nginx.conf /etc/nginx/nginx.conf
+[2026-10-07T20:11:24.454Z] #7 CACHED
+[2026-10-07T20:11:24.454Z] 
+[2026-10-07T20:11:24.454Z] #8 [4/4] COPY ./index.html /usr/share/nginx/html/
+[2026-10-07T20:11:24.454Z] #8 DONE 0.1s
+[2026-10-07T20:11:24.705Z] 
+[2026-10-07T20:11:24.705Z] #9 exporting to image
+[2026-10-07T20:11:24.705Z] #9 exporting layers
+[2026-10-07T20:11:24.705Z] #9 exporting layers 0.3s done
+[2026-10-07T20:11:24.956Z] #9 exporting manifest sha256:e1296fd22978a7b745cc3d23decf9bf2f1765aea4ab1474acbf31a543d6b79e3 0.0s done
+[2026-10-07T20:11:24.956Z] #9 exporting config sha256:bdafb2c2e3452067319d37511f19428108fea72a6bf06d7203ad40cb7d0e1c38 0.1s done
+[2026-10-07T20:11:24.956Z] #9 naming to cr.yandex/crpj27virc0v36d3u7rq/hub:v1.3.2 done
+[2026-10-07T20:11:24.956Z] #9 unpacking to cr.yandex/crpj27virc0v36d3u7rq/hub:v1.3.2
+[2026-10-07T20:11:24.956Z] #9 unpacking to cr.yandex/crpj27virc0v36d3u7rq/hub:v1.3.2 0.1s done
+[2026-10-07T20:11:24.956Z] #9 DONE 0.5s
+[2026-10-07T20:11:25.206Z] 
+[2026-10-07T20:11:25.206Z] #10 [auth] crpj27virc0v36d3u7rq/hub:pull,push token for cr.yandex
+[2026-10-07T20:11:25.206Z] #10 DONE 0.0s
+[2026-10-07T20:11:25.206Z] 
+[2026-10-07T20:11:25.206Z] #9 exporting to image
+[2026-10-07T20:11:25.206Z] #9 pushing layers
+[2026-10-07T20:11:25.757Z] #9 pushing layers 0.9s done
+[2026-10-07T20:11:25.757Z] #9 pushing manifest for cr.yandex/crpj27virc0v36d3u7rq/hub:v1.3.2@sha256:e1296fd22978a7b745cc3d23decf9bf2f1765aea4ab1474acbf31a543d6b79e3
+[2026-10-07T20:11:26.308Z] #9 pushing manifest for cr.yandex/crpj27virc0v36d3u7rq/hub:v1.3.2@sha256:e1296fd22978a7b745cc3d23decf9bf2f1765aea4ab1474acbf31a543d6b79e3 0.4s done
+[2026-10-07T20:11:26.309Z] #9 DONE 1.7s
+[2026-10-07T20:11:26.309Z] + [ -z v1.3.2 ]
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Deploy on tag)
+[Pipeline] sh
+[2026-10-07T20:11:26.779Z] + set -e
+[2026-10-07T20:11:26.779Z] + echo Прокатываю cr.yandex/crpj27virc0v36d3u7rq/hub:v1.3.2
+[2026-10-07T20:11:26.779Z] Прокатываю cr.yandex/crpj27virc0v36d3u7rq/hub:v1.3.2
+[2026-10-07T20:11:26.779Z] + kubectl -n web-app set image deployment/web-app web-app=cr.yandex/crpj27virc0v36d3u7rq/hub:v1.3.2
+[2026-10-07T20:11:26.779Z] deployment.apps/web-app image updated
+[2026-10-07T20:11:26.779Z] + kubectl -n web-app rollout status deployment/web-app --timeout=180s
+[2026-10-07T20:11:26.779Z] Waiting for deployment "web-app" rollout to finish: 1 out of 2 new replicas have been updated...
+[2026-10-07T20:11:41.545Z] Waiting for deployment "web-app" rollout to finish: 1 out of 2 new replicas have been updated...
+[2026-10-07T20:11:41.546Z] Waiting for deployment "web-app" rollout to finish: 1 old replicas are pending termination...
+[2026-10-07T20:11:41.546Z] Waiting for deployment "web-app" rollout to finish: 1 old replicas are pending termination...
+[2026-10-07T20:11:53.646Z] Waiting for deployment "web-app" rollout to finish: 1 old replicas are pending termination...
+[2026-10-07T20:11:53.646Z] deployment "web-app" successfully rolled out
+[2026-10-07T20:11:53.646Z] + kubectl -n web-app get deployment web-app -o wide
+[2026-10-07T20:11:53.647Z] NAME      READY   UP-TO-DATE   AVAILABLE   AGE   CONTAINERS   IMAGES                                      SELECTOR
+[2026-10-07T20:11:53.647Z] web-app   2/2     2            2           17m   web-app      cr.yandex/crpj27virc0v36d3u7rq/hub:v1.3.2   app=web-app
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // timestamps
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] End of Pipeline
+Finished: SUCCESS

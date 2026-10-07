@@ -6,104 +6,93 @@
 # Ingress), CI — только версией образа. Поэтому манифесты применяются здесь,
 # а пайплайну остаётся `set image` и ожидание прокатки.
 #
-# Манифесты берутся из репозитория приложения через git clone на admin-ноде:
-# так применённое состояние привязано к ревизии, а не к рабочему дереву
-# на машине оператора. Репозиторий публичный, креды не нужны.
-#
-# Ревизию можно зафиксировать: -e web_app_ref=v1.0.0
+# Манифесты лежат в этом же репозитории, в k8s/app/: они описывают не
+# приложение, а то, как оно живёт в нашем кластере, и для другого приложения
+# отличались бы парой значений (порт, проба, имя образа). Сам код приложения
+# живёт отдельно, в репозитории web-app, и Ansible в него не заглядывает.
 
 - name: "[33] Prepare app namespace and deploy manifests"
   hosts: admin
   become: false
   gather_facts: false
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
 
   vars:
-    app_namespace: "web-app"
-    kubeconfig_path: "/home/ubuntu/.kube/config"
-    rendered_dir: "/home/ubuntu/rendered"
-    app_repo: "https://github.com/Arthur-Politiko/web-app.git"
-    app_src_dir: "/home/ubuntu/web-app"
-    app_ref: "{{ web_app_ref | default('main') }}"
     registry_key_remote: "/home/ubuntu/ci-registry-key.json"
 
   tasks:
-    - name: "33-1 Ensure git is installed"
-      ansible.builtin.apt:
-        name: git
-        state: present
-        update_cache: true
-        cache_valid_time: 3600
-      become: true
-
-    - name: "33-2 Check registry key on admin node"
+    - name: "33-1 Check registry key on admin node"
       ansible.builtin.stat:
         path: "{{ registry_key_remote }}"
       register: registry_key
 
-    - name: "33-2a Require registry key"
+    - name: "33-1a Require registry key"
       ansible.builtin.assert:
         that: registry_key.stat.exists
         quiet: true
         fail_msg: "Нет ключа {{ registry_key_remote }} — сначала прогони 32-ci.yaml"
 
-    - name: "33-3 Create directory for rendered manifests"
+    - name: "33-2 Create directory for rendered manifests"
       ansible.builtin.file:
         path: "{{ rendered_dir }}"
         state: directory
         mode: "0755"
 
-    - name: "33-4 Copy namespace and RBAC manifest"
+    - name: "33-3 Copy manifests to the admin node"
       ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../k8s/app/rbac.yaml"
-        dest: "{{ rendered_dir }}/app-rbac.yaml"
+        src: "{{ playbook_dir }}/../k8s/app/{{ item }}"
+        dest: "{{ rendered_dir }}/{{ item }}"
         mode: "0644"
+      loop:
+        - namespace-rbac.yaml
+        - deployment.yaml
+        - service.yaml
+        - ingress.yaml
 
     # Namespace может уже существовать: его создаёт 32-ci.yaml перед тем, как
     # завести в нём ServiceAccount пайплайна. Apply идемпотентен — здесь
     # досоздаются Role и RoleBinding.
-    - name: "33-5 Apply namespace and pipeline rights"
-      ansible.builtin.command: kubectl apply -f {{ rendered_dir }}/app-rbac.yaml
+    - name: "33-4 Apply namespace and pipeline rights"
+      ansible.builtin.command: kubectl apply -f {{ rendered_dir }}/namespace-rbac.yaml
       register: app_rbac
       changed_when: "'created' in app_rbac.stdout or 'configured' in app_rbac.stdout"
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
 
     # Секрет с ключом реестра: кластер тянет образ из cr.yandex.
-    - name: "33-6 Create imagePullSecret in app namespace"
+    - name: "33-5 Create imagePullSecret in app namespace"
       ansible.builtin.shell:
         cmd: >-
           kubectl -n {{ app_namespace }} create secret docker-registry registry-key
           --docker-server=cr.yandex --docker-username=json_key
           --docker-password="$(cat {{ registry_key_remote }})"
           --dry-run=client -o yaml | kubectl apply -f -
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
       no_log: true
       changed_when: false
 
-    - name: "33-7 Fetch application repository"
-      ansible.builtin.git:
-        repo: "{{ app_repo }}"
-        dest: "{{ app_src_dir }}"
-        version: "{{ app_ref }}"
-        force: true
-        update: true
-
-    - name: "33-8 Apply application manifests"
-      ansible.builtin.command: kubectl apply -f {{ app_src_dir }}/k8s/
+    - name: "33-6 Apply application manifests"
+      ansible.builtin.command: >-
+        kubectl apply
+        -f {{ rendered_dir }}/deployment.yaml
+        -f {{ rendered_dir }}/service.yaml
+        -f {{ rendered_dir }}/ingress.yaml
       register: app_manifests
       changed_when: "'created' in app_manifests.stdout or 'configured' in app_manifests.stdout"
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
 
-    - name: "33-9 Collect state"
+    # Реестр манифест не фиксирует: его создаёт terraform, а идентификатор
+    # приходит из inventory. Версию образа задаёт пайплайн — на каждом релизе
+    # через kubectl set image. Операция идемпотентна: при том же значении
+    # API-сервер ничего не меняет.
+    - name: "33-7 Point the deployment at the registry from terraform"
+      ansible.builtin.command: >-
+        kubectl -n {{ app_namespace }} set image deployment/{{ app_deployment }}
+        {{ app_deployment }}=cr.yandex/{{ registry_id }}/hub:latest
+      changed_when: false
+
+    - name: "33-8 Collect state"
       ansible.builtin.command: kubectl -n {{ app_namespace }} get deploy,svc,ingress
       register: app_state
       changed_when: false
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
 
-  post_tasks:
     - name: Display application state
       ansible.builtin.debug:
         msg: "{{ app_state.stdout_lines | default([]) }}"
@@ -111,5 +100,5 @@
     - name: Display next steps
       ansible.builtin.debug:
         msg:
-          - "Namespace {{ app_namespace }} и манифесты приложения применены (ревизия {{ app_ref }})."
+          - "Namespace {{ app_namespace }} и манифесты приложения применены."
           - "Версию образа обновляет пайплайн: сборка на тег делает set image и rollout status."

@@ -17,6 +17,9 @@
         state: present
       # when: inventory_hostname != master_name
 
+    - name: Wait for apt to be free
+      ansible.builtin.include_tasks: tasks/wait-for-apt.yml
+
     - name: 10-2 Update apt cache
       ansible.builtin.apt:
         update_cache: true
@@ -52,10 +55,6 @@
         - overlay
         - br_netfilter
 
-    # modprobe действует только до перезагрузки, поэтому модули нужно прописать
-    # в modules-load.d. Без этого после рестарта ноды не поднимается br_netfilter:
-    # Flannel падает с "Failed to check br_netfilter", а новые поды не получают
-    # сеть. Проверено 2026-09-29 — именно это и случилось после перезапуска VM.
     - name: 10-6a Persist kernel modules across reboot
       ansible.builtin.copy:
         content: |

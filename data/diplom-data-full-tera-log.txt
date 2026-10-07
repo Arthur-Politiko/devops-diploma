@@ -1,0 +1,307 @@
+Started by an SCM change
+Checking out git https://github.com/Arthur-Politiko/devops-diploma.git into /var/jenkins_home/workspace/terraform@script/e0aa2e6a5ab3c697159c4e5a0bfd361959f921b531e8dd142ef70353f0a25cc3 to read ci/Jenkinsfile
+The recommended git tool is: NONE
+No credentials specified
+Cloning the remote Git repository
+Cloning repository https://github.com/Arthur-Politiko/devops-diploma.git
+ > git init /var/jenkins_home/workspace/terraform@script/e0aa2e6a5ab3c697159c4e5a0bfd361959f921b531e8dd142ef70353f0a25cc3 # timeout=10
+Fetching upstream changes from https://github.com/Arthur-Politiko/devops-diploma.git
+ > git --version # timeout=10
+ > git --version # 'git version 2.47.3'
+ > git fetch --tags --force --progress -- https://github.com/Arthur-Politiko/devops-diploma.git +refs/heads/*:refs/remotes/origin/* # timeout=10
+ > git config remote.origin.url https://github.com/Arthur-Politiko/devops-diploma.git # timeout=10
+ > git config --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/* # timeout=10
+Avoid second fetch
+ > git rev-parse refs/remotes/origin/main^{commit} # timeout=10
+Checking out Revision a074f34a2b181f01567f0352f87f0066307184fe (refs/remotes/origin/main)
+ > git config core.sparsecheckout # timeout=10
+ > git checkout -f a074f34a2b181f01567f0352f87f0066307184fe # timeout=10
+Commit message: "ci: Перенесены ряд файлов в ci, почищены лишние этапы пайплайнов"
+First time build. Skipping changelog.
+[Pipeline] Start of Pipeline
+[Pipeline] node
+Still waiting to schedule task
+Waiting for next available executor
+Running on Jenkins in /var/jenkins_home/workspace/terraform
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Declarative: Checkout SCM)
+[Pipeline] checkout
+The recommended git tool is: NONE
+No credentials specified
+Cloning the remote Git repository
+Cloning repository https://github.com/Arthur-Politiko/devops-diploma.git
+ > git init /var/jenkins_home/workspace/terraform # timeout=10
+Fetching upstream changes from https://github.com/Arthur-Politiko/devops-diploma.git
+ > git --version # timeout=10
+ > git --version # 'git version 2.47.3'
+ > git fetch --tags --force --progress -- https://github.com/Arthur-Politiko/devops-diploma.git +refs/heads/*:refs/remotes/origin/* # timeout=10
+ > git config remote.origin.url https://github.com/Arthur-Politiko/devops-diploma.git # timeout=10
+ > git config --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/* # timeout=10
+Avoid second fetch
+ > git rev-parse refs/remotes/origin/main^{commit} # timeout=10
+Checking out Revision a074f34a2b181f01567f0352f87f0066307184fe (refs/remotes/origin/main)
+ > git config core.sparsecheckout # timeout=10
+ > git checkout -f a074f34a2b181f01567f0352f87f0066307184fe # timeout=10
+Commit message: "ci: Перенесены ряд файлов в ci, почищены лишние этапы пайплайнов"
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] timestamps
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Terraform plan)
+[Pipeline] dir
+[2026-10-07T19:56:43.373Z] Running in /var/jenkins_home/workspace/terraform/tf
+[Pipeline] {
+[Pipeline] sh
+[2026-10-07T19:56:43.676Z] + set -e
+[2026-10-07T19:56:43.676Z] + awk $1=="key_id"{print $2} /keys/s3_key
+[2026-10-07T19:56:43.676Z] + export AWS_ACCESS_KEY_ID=***
+[2026-10-07T19:56:43.676Z] + awk $1=="secret"{print $2} /keys/s3_key
+[2026-10-07T19:56:43.676Z] + export AWS_SECRET_ACCESS_KEY=***
+[2026-10-07T19:56:43.677Z] + terraform fmt -check -recursive
+[2026-10-07T19:56:43.677Z] + terraform init -no-color
+[2026-10-07T19:56:43.677Z] Initializing the backend...
+[2026-10-07T19:56:43.677Z] 
+[2026-10-07T19:56:43.677Z] Successfully configured the backend "s3"! Terraform will automatically
+[2026-10-07T19:56:43.677Z] use this backend unless the backend configuration changes.
+[2026-10-07T19:56:43.677Z] Initializing provider plugins...
+[2026-10-07T19:56:43.677Z] - Reusing previous version of yandex-cloud/yandex from the dependency lock file
+[2026-10-07T19:56:43.928Z] - Reusing previous version of hashicorp/local from the dependency lock file
+[2026-10-07T19:56:44.178Z] - Installing yandex-cloud/yandex v0.220.0...
+[2026-10-07T19:56:47.408Z] - Installed yandex-cloud/yandex v0.220.0 (unauthenticated)
+[2026-10-07T19:56:47.408Z] - Installing hashicorp/local v2.9.0...
+[2026-10-07T19:56:47.659Z] - Installed hashicorp/local v2.9.0 (unauthenticated)
+[2026-10-07T19:56:47.659Z] 
+[2026-10-07T19:56:47.659Z] Terraform has been successfully initialized!
+[2026-10-07T19:56:47.659Z] 
+[2026-10-07T19:56:47.659Z] You may now begin working with Terraform. Try running "terraform plan" to see
+[2026-10-07T19:56:47.659Z] any changes that are required for your infrastructure. All Terraform commands
+[2026-10-07T19:56:47.659Z] should now work.
+[2026-10-07T19:56:47.659Z] 
+[2026-10-07T19:56:47.659Z] If you ever set or change modules or backend configuration for Terraform,
+[2026-10-07T19:56:47.659Z] rerun this command to reinitialize your working directory. If you forget, other
+[2026-10-07T19:56:47.659Z] commands will detect it and remind you to do so if necessary.
+[2026-10-07T19:56:47.659Z] + terraform validate -no-color
+[2026-10-07T19:56:48.570Z] Success! The configuration is valid.
+[2026-10-07T19:56:48.570Z] 
+[2026-10-07T19:56:48.570Z] + terraform plan -var-file=/keys/ci.tfvars -no-color -out=tfplan
+[2026-10-07T19:56:49.482Z] data.yandex_compute_image.default: Reading...
+[2026-10-07T19:56:49.482Z] yandex_container_registry.registry: Refreshing state... [id=crpj27virc0v36d3u7rq]
+[2026-10-07T19:56:49.482Z] yandex_vpc_network.net: Refreshing state... [id=enp2ot9fnvq6e7l1hq1o]
+[2026-10-07T19:56:49.482Z] yandex_vpc_address.nat: Refreshing state... [id=e9bquk1qt79qsreraedl]
+[2026-10-07T19:56:49.733Z] data.yandex_compute_image.default: Read complete after 1s [id=fd8ee8il5b8tk8oggcs0]
+[2026-10-07T19:56:49.733Z] yandex_container_repository.repo: Refreshing state... [id=crpvo0d1vd0m8r5jcbkr]
+[2026-10-07T19:56:49.733Z] yandex_vpc_route_table.rt["nat-rt"]: Refreshing state... [id=enpae939boouirjd3f8g]
+[2026-10-07T19:56:49.733Z] yandex_vpc_security_group.sg["mysql"]: Refreshing state... [id=enporv7gb3j4g0c8o3vl]
+[2026-10-07T19:56:49.733Z] yandex_vpc_security_group.sg["public"]: Refreshing state... [id=enp8uervvp057knd0q90]
+[2026-10-07T19:56:49.733Z] yandex_vpc_security_group.sg["private"]: Refreshing state... [id=enparv3fmgm0auu012ku]
+[2026-10-07T19:56:49.733Z] yandex_vpc_subnet.subnets["private-b"]: Refreshing state... [id=e2lilsmdrpbn8ar3tll8]
+[2026-10-07T19:56:49.733Z] yandex_vpc_subnet.subnets["private-a"]: Refreshing state... [id=e9bua7cm8jj6v6g6gnqr]
+[2026-10-07T19:56:49.733Z] yandex_vpc_subnet.subnets["public-b"]: Refreshing state... [id=e2leel9t3bkih1o5scsr]
+[2026-10-07T19:56:49.733Z] yandex_vpc_subnet.subnets["public-a"]: Refreshing state... [id=e9b2na1fiuhbvso1g02g]
+[2026-10-07T19:56:49.733Z] yandex_compute_instance.vms["k8s-worker-01"]: Refreshing state... [id=fhms26gq5gm20jl0ps83]
+[2026-10-07T19:56:49.733Z] yandex_compute_instance.vms["k8s-master-02"]: Refreshing state... [id=epdioclpef1ngboei54i]
+[2026-10-07T19:56:49.733Z] yandex_compute_instance.vms["admin"]: Refreshing state... [id=fhm0kuv63l6i1mmg6fqr]
+[2026-10-07T19:56:49.733Z] yandex_compute_instance.vms["k8s-master-01"]: Refreshing state... [id=fhmc8e9357c2t5s0l5sp]
+[2026-10-07T19:56:49.733Z] yandex_compute_instance.vms["k8s-worker-02"]: Refreshing state... [id=epdiejcnllahgmsqq2gu]
+[2026-10-07T19:56:49.733Z] yandex_compute_instance.vms["k8s-master-03"]: Refreshing state... [id=fhm41cuhnusma4uqurdk]
+[2026-10-07T19:56:49.733Z] yandex_compute_instance.vms["bastion"]: Refreshing state... [id=fhm235tnimgpm9jnnsth]
+[2026-10-07T19:56:49.733Z] yandex_compute_instance.vms["nat"]: Refreshing state... [id=fhmhf96j505fgna7m58b]
+[2026-10-07T19:56:49.733Z] yandex_compute_instance.vms["k8s-worker-03"]: Refreshing state... [id=fhmo4cuhipkj3ko8vr4f]
+[2026-10-07T19:56:49.984Z] local_file.ansible_config: Refreshing state... [id=a018e7de6d9918a9159be7943f86ea864fc89ece]
+[2026-10-07T19:56:49.984Z] local_file.ansible_inventory: Refreshing state... [id=a1d2fd1844c07690945e85541ce07292132cdf86]
+[2026-10-07T19:56:49.984Z] 
+[2026-10-07T19:56:49.984Z] Terraform used the selected providers to generate the following execution
+[2026-10-07T19:56:49.984Z] plan. Resource actions are indicated with the following symbols:
+[2026-10-07T19:56:49.984Z]   + create
+[2026-10-07T19:56:49.984Z] -/+ destroy and then create replacement
+[2026-10-07T19:56:49.984Z] 
+[2026-10-07T19:56:49.984Z] Terraform will perform the following actions:
+[2026-10-07T19:56:49.984Z] 
+[2026-10-07T19:56:49.984Z]   # local_file.ansible_config will be created
+[2026-10-07T19:56:49.984Z]   + resource "local_file" "ansible_config" {
+[2026-10-07T19:56:49.984Z]       + content              = <<-EOT
+[2026-10-07T19:56:49.984Z]             [defaults]
+[2026-10-07T19:56:49.984Z]             inventory = inventory.ini
+[2026-10-07T19:56:49.984Z]             host_key_checking = False
+[2026-10-07T19:56:49.984Z]             retry_files_enabled = False
+[2026-10-07T19:56:49.984Z]             
+[2026-10-07T19:56:49.984Z]             [ssh_connection]
+[2026-10-07T19:56:49.984Z]             pipelining = True
+[2026-10-07T19:56:49.984Z]             ssh_args = -o ConnectTimeout=8 -o BatchMode=yes -o StrictHostKeyChecking=no -o ControlMaster=auto -o ControlPersist=60s -o UserKnownHostsFile=/dev/null -o ProxyCommand="ssh  -i ../vault/id_ed25519 -o StrictHostKeyChecking=no -W %h:%p ubuntu@93.77.190.147"
+[2026-10-07T19:56:49.984Z]             
+[2026-10-07T19:56:49.984Z]             [privilege_escalation]
+[2026-10-07T19:56:49.984Z]             become = True
+[2026-10-07T19:56:49.984Z]             become_method = sudo
+[2026-10-07T19:56:49.984Z]             become_user = root
+[2026-10-07T19:56:49.984Z]             become_ask_pass = False
+[2026-10-07T19:56:49.984Z]         EOT
+[2026-10-07T19:56:49.984Z]       + content_base64sha256 = (known after apply)
+[2026-10-07T19:56:49.984Z]       + content_base64sha512 = (known after apply)
+[2026-10-07T19:56:49.984Z]       + content_md5          = (known after apply)
+[2026-10-07T19:56:49.984Z]       + content_sha1         = (known after apply)
+[2026-10-07T19:56:49.984Z]       + content_sha256       = (known after apply)
+[2026-10-07T19:56:49.984Z]       + content_sha512       = (known after apply)
+[2026-10-07T19:56:49.984Z]       + directory_permission = "0777"
+[2026-10-07T19:56:49.984Z]       + file_permission      = "0777"
+[2026-10-07T19:56:49.984Z]       + filename             = "./../ansible/ansible.cfg"
+[2026-10-07T19:56:49.984Z]       + id                   = (known after apply)
+[2026-10-07T19:56:49.984Z]     }
+[2026-10-07T19:56:49.984Z] 
+[2026-10-07T19:56:49.984Z]   # local_file.ansible_inventory will be created
+[2026-10-07T19:56:49.984Z]   + resource "local_file" "ansible_inventory" {
+[2026-10-07T19:56:49.984Z]       + content              = <<-EOT
+[2026-10-07T19:56:49.984Z]             [all:vars]
+[2026-10-07T19:56:49.984Z]             ansible_user=ubuntu
+[2026-10-07T19:56:49.984Z]             ansible_ssh_private_key_file=../vault/id_ed25519
+[2026-10-07T19:56:49.984Z]             master_name=k8s-master-01
+[2026-10-07T19:56:49.984Z]             master_ip=192.168.10.9
+[2026-10-07T19:56:49.984Z]             
+[2026-10-07T19:56:49.984Z]             [masters]
+[2026-10-07T19:56:49.984Z]             k8s-master-01 ansible_host=192.168.10.9
+[2026-10-07T19:56:49.984Z]             k8s-master-02 ansible_host=192.168.20.16
+[2026-10-07T19:56:49.984Z]             k8s-master-03 ansible_host=192.168.10.13
+[2026-10-07T19:56:49.984Z]             
+[2026-10-07T19:56:49.985Z]                 
+[2026-10-07T19:56:49.985Z]             [workers] 
+[2026-10-07T19:56:49.985Z]             k8s-worker-01 ansible_host=192.168.10.19
+[2026-10-07T19:56:49.985Z]             k8s-worker-02 ansible_host=192.168.20.4
+[2026-10-07T19:56:49.985Z]             k8s-worker-03 ansible_host=192.168.10.4
+[2026-10-07T19:56:49.985Z]             
+[2026-10-07T19:56:49.985Z]             
+[2026-10-07T19:56:49.985Z]             [nat_gateway]
+[2026-10-07T19:56:49.985Z]             nat ansible_host=192.168.1.254
+[2026-10-07T19:56:49.985Z]             
+[2026-10-07T19:56:49.985Z]             
+[2026-10-07T19:56:49.985Z]             [admin]
+[2026-10-07T19:56:49.985Z]             admin ansible_host=192.168.10.26
+[2026-10-07T19:56:49.985Z]             
+[2026-10-07T19:56:49.985Z]             
+[2026-10-07T19:56:49.985Z]             [all:children]
+[2026-10-07T19:56:49.985Z]             masters
+[2026-10-07T19:56:49.985Z]             workers
+[2026-10-07T19:56:49.985Z]             nat_gateway
+[2026-10-07T19:56:49.985Z]             admin
+[2026-10-07T19:56:49.985Z]         EOT
+[2026-10-07T19:56:49.985Z]       + content_base64sha256 = (known after apply)
+[2026-10-07T19:56:49.985Z]       + content_base64sha512 = (known after apply)
+[2026-10-07T19:56:49.985Z]       + content_md5          = (known after apply)
+[2026-10-07T19:56:49.985Z]       + content_sha1         = (known after apply)
+[2026-10-07T19:56:49.985Z]       + content_sha256       = (known after apply)
+[2026-10-07T19:56:49.985Z]       + content_sha512       = (known after apply)
+[2026-10-07T19:56:49.985Z]       + directory_permission = "0777"
+[2026-10-07T19:56:49.985Z]       + file_permission      = "0777"
+[2026-10-07T19:56:49.985Z]       + filename             = "./../ansible/inventory.ini"
+[2026-10-07T19:56:49.985Z]       + id                   = (known after apply)
+[2026-10-07T19:56:49.985Z]     }
+[2026-10-07T19:56:49.985Z] 
+[2026-10-07T19:56:49.985Z]   # yandex_compute_instance.vms["nat"] must be replaced
+[2026-10-07T19:56:49.985Z] -/+ resource "yandex_compute_instance" "vms" {
+[2026-10-07T19:56:49.985Z]       ~ created_at                = "2026-10-07T18:59:31Z" -> (known after apply)
+[2026-10-07T19:56:49.985Z]       ~ folder_id                 = "b1g3ccq6pd5djimr73u2" -> (known after apply)
+[2026-10-07T19:56:49.985Z]       ~ fqdn                      = "nat.ru-central1.internal" -> (known after apply)
+[2026-10-07T19:56:49.985Z]       + gpu_cluster_id            = (known after apply)
+[2026-10-07T19:56:49.985Z]       ~ hardware_generation       = [
+[2026-10-07T19:56:49.985Z]           - {
+[2026-10-07T19:56:49.985Z]               - generation2_features = []
+[2026-10-07T19:56:49.985Z]               - legacy_features      = [
+[2026-10-07T19:56:49.985Z]                   - {
+[2026-10-07T19:56:49.985Z]                       - pci_topology = "PCI_TOPOLOGY_V2"
+[2026-10-07T19:56:49.985Z]                     },
+[2026-10-07T19:56:49.985Z]                 ]
+[2026-10-07T19:56:49.985Z]             },
+[2026-10-07T19:56:49.985Z]         ] -> (known after apply)
+[2026-10-07T19:56:49.985Z]       ~ id                        = "fhmhf96j505fgna7m58b" -> (known after apply)
+[2026-10-07T19:56:49.985Z]       - labels                    = {} -> null
+[2026-10-07T19:56:49.985Z]       + maintenance_grace_period  = (known after apply)
+[2026-10-07T19:56:49.985Z]       + maintenance_policy        = (known after apply)
+[2026-10-07T19:56:49.985Z]         name                      = "nat"
+[2026-10-07T19:56:49.985Z]       + reserved_instance_pool_id = (known after apply)
+[2026-10-07T19:56:49.985Z]       ~ status                    = "running" -> (known after apply)
+[2026-10-07T19:56:49.985Z]         # (8 unchanged attributes hidden)
+[2026-10-07T19:56:49.985Z] 
+[2026-10-07T19:56:49.985Z]       ~ boot_disk {
+[2026-10-07T19:56:49.985Z]           ~ device_name = "fhmeeo07ran3n4iqjh82" -> (known after apply)
+[2026-10-07T19:56:49.985Z]           ~ disk_id     = "fhmeeo07ran3n4iqjh82" -> (known after apply)
+[2026-10-07T19:56:49.985Z]           ~ mode        = "READ_WRITE" -> (known after apply)
+[2026-10-07T19:56:49.985Z]             # (1 unchanged attribute hidden)
+[2026-10-07T19:56:49.985Z] 
+[2026-10-07T19:56:49.985Z]           ~ initialize_params {
+[2026-10-07T19:56:49.985Z]               ~ block_size  = 4096 -> (known after apply)
+[2026-10-07T19:56:49.985Z]               + description = (known after apply)
+[2026-10-07T19:56:49.985Z]               ~ image_id    = "fd8ee8il5b8tk8oggcs0" -> "fd80mrhj8fl2oe87o4e1" # forces replacement
+[2026-10-07T19:56:49.985Z]               + name        = (known after apply)
+[2026-10-07T19:56:49.985Z]               + snapshot_id = (known after apply)
+[2026-10-07T19:56:49.985Z]                 # (3 unchanged attributes hidden)
+[2026-10-07T19:56:49.985Z]             }
+[2026-10-07T19:56:49.985Z]         }
+[2026-10-07T19:56:49.985Z] 
+[2026-10-07T19:56:49.985Z]       ~ metadata_options (known after apply)
+[2026-10-07T19:56:49.985Z]       - metadata_options {
+[2026-10-07T19:56:49.985Z]           - aws_v1_http_endpoint = 1 -> null
+[2026-10-07T19:56:49.985Z]           - aws_v1_http_token    = 2 -> null
+[2026-10-07T19:56:49.985Z]           - aws_v2_http_endpoint = 1 -> null
+[2026-10-07T19:56:49.985Z]           - aws_v2_http_token    = 1 -> null
+[2026-10-07T19:56:49.985Z]           - gce_http_endpoint    = 1 -> null
+[2026-10-07T19:56:49.985Z]           - gce_http_token       = 1 -> null
+[2026-10-07T19:56:49.985Z]         }
+[2026-10-07T19:56:49.985Z] 
+[2026-10-07T19:56:49.985Z]       ~ network_interface {
+[2026-10-07T19:56:49.985Z]           ~ index              = 0 -> (known after apply)
+[2026-10-07T19:56:49.985Z]           ~ ipv6               = false -> (known after apply)
+[2026-10-07T19:56:49.985Z]           + ipv6_address       = (known after apply)
+[2026-10-07T19:56:49.985Z]           ~ mac_address        = "d0:0d:11:7a:4d:32" -> (known after apply)
+[2026-10-07T19:56:49.985Z]           ~ nat_ip_version     = "IPV4" -> (known after apply)
+[2026-10-07T19:56:49.985Z]             # (6 unchanged attributes hidden)
+[2026-10-07T19:56:49.985Z]         }
+[2026-10-07T19:56:49.985Z] 
+[2026-10-07T19:56:49.985Z]       ~ placement_policy (known after apply)
+[2026-10-07T19:56:49.985Z]       - placement_policy {
+[2026-10-07T19:56:49.985Z]           - host_affinity_rules       = [] -> null
+[2026-10-07T19:56:49.985Z]           - placement_group_partition = 0 -> null
+[2026-10-07T19:56:49.985Z]             # (1 unchanged attribute hidden)
+[2026-10-07T19:56:49.985Z]         }
+[2026-10-07T19:56:49.985Z] 
+[2026-10-07T19:56:49.985Z]       ~ resources {
+[2026-10-07T19:56:49.985Z]           - gpus          = 0 -> null
+[2026-10-07T19:56:49.985Z]             # (3 unchanged attributes hidden)
+[2026-10-07T19:56:49.985Z]         }
+[2026-10-07T19:56:49.985Z] 
+[2026-10-07T19:56:49.985Z]         # (1 unchanged block hidden)
+[2026-10-07T19:56:49.985Z]     }
+[2026-10-07T19:56:49.985Z] 
+[2026-10-07T19:56:49.985Z] Plan: 3 to add, 0 to change, 1 to destroy.
+[2026-10-07T19:56:49.985Z] 
+[2026-10-07T19:56:49.985Z] ─────────────────────────────────────────────────────────────────────────────
+[2026-10-07T19:56:49.985Z] 
+[2026-10-07T19:56:49.985Z] Saved the plan to: tfplan
+[2026-10-07T19:56:49.985Z] 
+[2026-10-07T19:56:49.985Z] To perform exactly these actions, run the following command to apply:
+[2026-10-07T19:56:49.985Z]     terraform apply "tfplan"
+[Pipeline] }
+[Pipeline] // dir
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Terraform apply)
+Stage "Terraform apply" skipped due to when conditional
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Declarative: Post Actions)
+[Pipeline] archiveArtifacts
+[2026-10-07T19:56:50.442Z] Archiving artifacts
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // timestamps
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] End of Pipeline
+Finished: SUCCESS

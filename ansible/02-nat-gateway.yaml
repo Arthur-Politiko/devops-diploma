@@ -1,24 +1,67 @@
 ---
-# Плейбук настройки NAT на NAT-ноде
-# Обеспечивает доступ private-нод в интернет через NAT (masquerade)
+# Настройка NAT-ноды: доступ private-нод в интернет через masquerade.
+#
 - name: "[02] Configure NAT gateway"
   hosts: nat_gateway
   become: true
   gather_facts: false
 
-  tasks:
-    - name: Install NAT packages without remote Python
-      ansible.builtin.raw: >-
-        export DEBIAN_FRONTEND=noninteractive;
-        apt-get update &&
-        apt-get install -y iptables iptables-persistent
+  vars:
+    nat_sysctl_file: /etc/sysctl.d/99-kubernetes-nat.conf
 
-    - name: Enable IP forwarding and configure masquerading
-      ansible.builtin.raw: >-
-        sysctl -w net.ipv4.ip_forward=1 &&
-        printf 'net.ipv4.ip_forward = 1\n' > /etc/sysctl.d/99-kubernetes-nat.conf &&
-        sysctl --system >/dev/null &&
-        IFACE=$(ip route show default | awk 'NR==1 {print $5}') &&
-        (iptables -t nat -C POSTROUTING -o "$IFACE" -j MASQUERADE 2>/dev/null ||
-        iptables -t nat -A POSTROUTING -o "$IFACE" -j MASQUERADE) &&
-        netfilter-persistent save
+  tasks:
+    # Та же гонка, что и в 01-bootstrap, но nat идёт в цепочке первым.
+    - name: Wait for apt to be free
+      ansible.builtin.include_tasks: tasks/wait-for-apt.yml
+
+    - name: Disable periodic APT upgrades
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: false
+        state: stopped
+      loop:
+        - apt-daily.timer
+        - apt-daily-upgrade.timer
+
+    # DEBIAN_FRONTEND=noninteractive заставляет взять ответ
+    # по умолчанию, иначе установка ждёт ввода, а плейбук висит.
+    - name: Install iptables packages
+      ansible.builtin.apt:
+        name:
+          - iptables
+          - iptables-persistent
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - name: Enable IP forwarding
+      ansible.builtin.copy:
+        content: "net.ipv4.ip_forward = 1\n"
+        dest: "{{ nat_sysctl_file }}"
+        mode: "0644"
+      register: nat_sysctl
+
+    - name: Apply sysctl settings
+      ansible.builtin.command: sysctl --system
+      when: nat_sysctl.changed
+      changed_when: false
+
+    - name: Find the default interface
+      ansible.builtin.command: ip route show default
+      register: nat_default_route
+      changed_when: false
+
+    - name: Masquerade outgoing traffic
+      ansible.builtin.iptables:
+        table: nat
+        chain: POSTROUTING
+        out_interface: "{{ nat_default_route.stdout_lines[0].split()[4] }}"
+        jump: MASQUERADE
+      register: nat_masquerade
+
+    - name: Save iptables rules
+      ansible.builtin.command: netfilter-persistent save
+      when: nat_masquerade.changed
+      changed_when: false

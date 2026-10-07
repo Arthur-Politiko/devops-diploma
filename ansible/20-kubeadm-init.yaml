@@ -13,10 +13,8 @@
     cri_socket: "unix:///var/run/containerd/containerd.sock"
     admin_kubeconfig_path: "/etc/kubernetes/admin.conf"
 
-  pre_tasks:
+  tasks:
     # admin.conf существует = кластер уже инициализирован.
-    # end_play здесь не нужен: 20-3 и так пропускается по cluster_initialized,
-    # а end_play оборвал бы play для всех мастеров сразу.
     - name: 20-1 Check if cluster is already initialized
       ansible.builtin.stat:
         path: "{{ admin_kubeconfig_path }}"
@@ -27,14 +25,10 @@
       ansible.builtin.set_fact:
         cluster_initialized: "{{ admin_conf_stat.stat.exists | default(false) }}"
 
-  tasks:
     # Инициализация кластера Kubernetes только на одном мастере.
     # admin.conf остаётся только здесь: это рабочий конфиг самого kubeadm.
     # Копий в ~/.kube на мастере нет — все обращения к кластеру идут
-    # с admin-ноды (kubectl и kubeconfig ставит 23-admin-kube-config.yaml).
-    #
-    # Join-токен здесь не создаётся: его генерирует 21-kubeadm-join.yaml
-    # перед каждым join'ом, потому что токен живёт 24 часа.
+    # с admin-ноды 
     - name: 20-3 Initialize Kubernetes cluster
       ansible.builtin.command: >
         kubeadm init
@@ -49,7 +43,6 @@
       changed_when: true
       when: not cluster_initialized and inventory_hostname == master_name
 
-  post_tasks:
     - name: Display cluster info
       ansible.builtin.debug:
         msg: |

@@ -32,11 +32,11 @@
   hosts: admin
   become: false
   gather_facts: true
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
 
   vars:
-    app_namespace: "web-app"
     deploy_sa: "ci-deployer"
-    kubeconfig_path: "/home/ubuntu/.kube/config"
     ci_kubeconfig: "/home/ubuntu/ci-kubeconfig"
     registry_key_file: "{{ playbook_dir }}/../vault/ci-registry-key.json"
     registry_key_remote: "/home/ubuntu/ci-registry-key.json"
@@ -66,6 +66,9 @@
     api_server: "https://{{ master_ip }}:6443"
 
   tasks:
+    - name: Wait for apt to be free
+      ansible.builtin.include_tasks: tasks/wait-for-apt.yml
+
     # ------------------------- Docker -------------------------
     - name: "32-1 Install Docker apt prerequisites"
       ansible.builtin.apt:
@@ -228,8 +231,6 @@
       register: app_ns_create
       changed_when: "'created' in app_ns_create.stdout"
       failed_when: app_ns_create.rc != 0 and 'AlreadyExists' not in app_ns_create.stderr
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
 
     # ------------------------- Kubeconfig для деплоя -------------------------
     - name: "32-8 Create deploy ServiceAccount"
@@ -237,8 +238,6 @@
       register: sa_create
       changed_when: "'created' in sa_create.stdout"
       failed_when: sa_create.rc != 0 and 'already exists' not in (sa_create.stderr | lower)
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
 
     # Долгоживущий токен: снаружи кластера иначе не аутентифицироваться.
     - name: "32-9 Create long-lived token for the deploy account"
@@ -252,8 +251,6 @@
             kubernetes.io/service-account.name: {{ deploy_sa }}
         type: kubernetes.io/service-account-token
         EOF
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
       changed_when: false
 
     - name: "32-10 Wait for the token to be issued"
@@ -265,44 +262,45 @@
       retries: 12
       delay: 5
       changed_when: false
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
       no_log: true
 
+    # CA берём готовым base64 — в kubeconfig он нужен в том же виде.
     - name: "32-11 Read cluster CA"
       ansible.builtin.command: >-
         kubectl config view --raw --minify
         -o jsonpath='{.clusters[0].cluster.certificate-authority-data}'
       register: cluster_ca
       changed_when: false
-      environment:
-        KUBECONFIG: "{{ kubeconfig_path }}"
       no_log: true
 
-    # У set-cluster нет флага --certificate-authority-data: CA передаётся файлом
-    # с --embed-certs, иначе сертификат в kubeconfig не попадёт и kubectl уйдёт
-    # на localhost:8080. Значение CA достаём из kubeconfig admin-ноды.
-    - name: "32-12 Build kubeconfig for the pipeline"
-      ansible.builtin.shell: |
-        set -e
-        K={{ ci_kubeconfig }}
-        CA=/tmp/ci-ca.crt
-        kubectl config view --raw --minify \
-          -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' \
-          --kubeconfig={{ kubeconfig_path }} | base64 -d > "$CA"
-        rm -f "$K"
-        kubectl config set-cluster k8s --server={{ api_server }} \
-          --certificate-authority="$CA" --embed-certs=true --kubeconfig="$K"
-        kubectl config set-credentials {{ deploy_sa }} --token='{{ sa_token.stdout }}' --kubeconfig="$K"
-        kubectl config set-context ci --cluster=k8s --user={{ deploy_sa }} --kubeconfig="$K"
-        kubectl config use-context ci --kubeconfig="$K"
-        chmod 0600 "$K"
-        rm -f "$CA"
-      args:
-        creates: "{{ ci_kubeconfig }}"
+    # Kubeconfig — обычный YAML, поэтому рендерим его шаблоном, а не пятью
+    # командами `kubectl config set-*`. Заодно уходит возня с --embed-certs.
+    # В отличие от creates:, содержимое сравнивается: если кластер пересобрали
+    # и CA или токен сменились, файл обновится, а не останется мёртвым.
+    - name: "32-12 Render kubeconfig for the pipeline"
+      ansible.builtin.copy:
+        content: |
+          apiVersion: v1
+          kind: Config
+          clusters:
+            - name: k8s
+              cluster:
+                server: "{{ api_server }}"
+                certificate-authority-data: "{{ cluster_ca.stdout }}"
+          users:
+            - name: "{{ deploy_sa }}"
+              user:
+                token: "{{ sa_token.stdout }}"
+          contexts:
+            - name: ci
+              context:
+                cluster: k8s
+                user: "{{ deploy_sa }}"
+          current-context: ci
+        dest: "{{ ci_kubeconfig }}"
+        mode: "0600"
       no_log: true
 
-  post_tasks:
     - name: Display what was prepared
       ansible.builtin.debug:
         msg:

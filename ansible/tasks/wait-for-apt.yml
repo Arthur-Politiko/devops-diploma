@@ -1,0 +1,13 @@
+---
+# Ждём освобождения apt/dpkg: 
+- name: Wait for apt and dpkg locks to be released
+  ansible.builtin.raw: |
+    for _ in $(seq 1 180); do
+      fuser -s /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock \
+               /var/cache/apt/archives/lock 2>/dev/null || exit 0
+      sleep 5
+    done
+    echo "apt/dpkg are still busy after 15 minutes" >&2
+    exit 1
+  changed_when: false
+  become: true

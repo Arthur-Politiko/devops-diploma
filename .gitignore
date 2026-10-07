@@ -71,3 +71,7 @@ kubeconfig.*
 
 # Helm
 Chart.lock
+
+# md 
+marks.md
+roadmap.md
